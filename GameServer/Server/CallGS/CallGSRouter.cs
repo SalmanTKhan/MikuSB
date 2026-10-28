@@ -23,6 +23,9 @@ public static class CallGSRouter
 
     public static async Task Route(Connection connection, ReqCallGS req, ushort seqNo)
     {
+        // Retail capture: every ReqCallGS receives an empty transport acknowledgment,
+        // independently of whether a Lua callback is produced.
+        await connection.SendPacket(CmdIds.RspCallGS);
         if (Handlers.TryGetValue(req.Api, out var handler))
         {
             try

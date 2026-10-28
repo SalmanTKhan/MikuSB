@@ -245,6 +245,13 @@ public class PlayerInstance(PlayerGameData data)
         }
         Attributes.SyncTo(proto);
 
+        // Testing progression is an overlay; include it in the first snapshot so
+        // feature gates do not depend on a later empty-name script notification.
+        var testingProgress = new NtfSyncPlayer();
+        QuestManager.SyncTestingStateTo(testingProgress);
+        foreach (var (key, value) in testingProgress.Custom)
+            proto.Attrs[key] = value;
+
         foreach (var attr in Attributes.AllStrings)
             Attributes.SyncTo(proto, attr);
 
@@ -301,6 +308,9 @@ public class PlayerInstance(PlayerGameData data)
         ActiveLevelSeed = seed;
         ActiveLevelTeamId = teamId;
     }
+
+    public bool IsActiveChapterLevel(uint levelId) =>
+        ActiveLevelType == QuestLevelType.Chapter && ActiveLevelId == levelId && ActiveLevelSeed != 0;
 
     public bool IsLevelSession(QuestLevelType levelType, uint levelId, uint seed) =>
         ActiveLevelType == levelType && ActiveLevelId == levelId && ActiveLevelSeed == seed;

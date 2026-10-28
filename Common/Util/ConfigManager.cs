@@ -9,7 +9,8 @@ public static class ConfigManager
 {
     public static readonly Logger Logger = new("ConfigManager");
     public static ConfigContainer Config { get; private set; } = new();
-    private static readonly string ConfigFilePath = Config.Path.ConfigPath + "/Config.json";
+    private static string ConfigFilePath => File.Exists("Config/Config.local.json")
+        ? "Config/Config.local.json" : "Config/Config.json";
     public static HotfixContainer Hotfix { get; private set; } = new();
     private static readonly string HotfixFilePath = Config.Path.ConfigPath + "/Hotfix.json";
 

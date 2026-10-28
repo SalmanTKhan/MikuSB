@@ -15,7 +15,9 @@ namespace MikuSB.SdkServer;
 
 public static class SdkServer
 {
-    public static void Start(string[] args)
+    private static IHost? host;
+
+    public static async Task Start(string[] args)
     {
         var builder = Host.CreateDefaultBuilder(args)
             .ConfigureWebHostDefaults(webBuilder =>
@@ -29,7 +31,7 @@ public static class SdkServer
                         _ = Utils.CertHelper.GetOrCreate(null);
 
                         var bindAddr = System.Net.IPAddress.Parse(ConfigManager.Config.HttpServer.BindAddress);
-                        foreach (var port in new[] { ConfigManager.Config.HttpServer.Port, 13443, 18443, 31443 })
+                        foreach (var port in ConfigManager.Config.HttpServer.AdditionalTlsPorts.Prepend(ConfigManager.Config.HttpServer.Port).Distinct())
                         {
                             serverOptions.Listen(bindAddr, port, o =>
                             {
@@ -43,9 +45,17 @@ public static class SdkServer
                     });
             });
 
-        var host = builder.Build();
-        host.RunAsync();
+        host = builder.Build();
+        await host.StartAsync();
     }
+    public static async Task Stop()
+    {
+        if (host == null) return;
+        await host.StopAsync();
+        host.Dispose();
+        host = null;
+    }
+
 }
 
 public class Startup
@@ -62,6 +72,12 @@ public class Startup
     public static void Configure(IApplicationBuilder app, IWebHostEnvironment env)
     {
         if (env.IsDevelopment()) app.UseDeveloperExceptionPage();
+
+        app.Use(async (context, next) =>
+        {
+            await next();
+            new Logger("SdkRequest").Info($"{context.Request.Method} {context.Request.Path} -> {context.Response.StatusCode}");
+        });
 
         app.UseWebSockets();
         app.Use(async (context, next) =>

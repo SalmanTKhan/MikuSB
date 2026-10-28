@@ -28,6 +28,7 @@ public class IConsole
 
     public static void RedrawInput(string input, bool hasPrefix = true)
     {
+        if (Console.IsOutputRedirected || Console.IsInputRedirected) return;
         var length = GetWidth(input);
         if (hasPrefix)
         {

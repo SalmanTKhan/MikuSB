@@ -196,7 +196,8 @@ public sealed class ProxyServer(
             80 => ConfigManager.Config.HttpServer.Port,
             893 => 31443,
             13443 => 13443,
-            18443 => 18443,
+            18443 => ConfigManager.Config.HttpServer.AdditionalTlsPorts.Contains(18443)
+                ? 18443 : ConfigManager.Config.HttpServer.Port,
             31443 => 31443,
             _ => 13443
         });

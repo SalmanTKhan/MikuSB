@@ -10,17 +10,18 @@ public class Lineup_Update : CallGSHandler<LineupUpdateParam>
     protected override async Task<CallGSResult> HandleAsync(CallGSContext context, LineupUpdateParam req)
     {
 
-        if (req == null)
+        if (req == null || req.Name.Length > 64)
         {
-            return CallGSResult.Ok("{}", "UpdateLineup");
+            return CallGSResult.Error("error.BadParam", "UpdateLineup");
         }
 
-        var formation = await context.Connection.Player!.LineupManager.UpdateLineup(req.Index,req.Member1,req.Member2,req.Member3);
+        var name = string.IsNullOrEmpty(req.Name) ? null : req.Name;
+        var formation = await context.Connection.Player!.LineupManager.UpdateLineup(req.Index,req.Member1,req.Member2,req.Member3, name: name);
         if (formation == null)
         {
-            return CallGSResult.Ok("{}", "UpdateLineup");
+            return CallGSResult.Error("error.BadParam", "UpdateLineup");
         }
-        return CallGSResult.Ok("{}", "UpdateLineup");
+        return CallGSResult.Ok("null", "UpdateLineup");
     }
 }
 

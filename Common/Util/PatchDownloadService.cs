@@ -15,6 +15,8 @@ public static class PatchDownloadService
         if (File.Exists(patchPath))
             return;
 
+        if (Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") == "1")
+            throw new FileNotFoundException("Offline mode: supply a reviewed runtime patch before launching the client.", patchPath);
         Directory.CreateDirectory(Path.GetDirectoryName(patchPath)!);
         Logger.Warn($"Patch DLL not found. Downloading to {patchPath}.");
 

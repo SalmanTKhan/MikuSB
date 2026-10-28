@@ -1,4 +1,6 @@
-﻿using Google.Protobuf;
+using System.IO.Pipelines;
+using Yggdrasil.Network.TCP;
+using Google.Protobuf;
 using Google.Protobuf.Reflection;
 using MikuSB.Enums.Packet;
 using MikuSB.Proto;
@@ -10,7 +12,7 @@ using System.Reflection;
 
 namespace MikuSB.TcpSharp;
 
-public class SocketConnection
+public class SocketConnection : TcpConnection
 {
     public static readonly ConcurrentBag<int> BannedPackets = [];
     private static readonly Logger Logger = new("GameServer");
@@ -20,71 +22,43 @@ public class SocketConnection
     [
         
     ];
-    protected readonly CancellationTokenSource CancelToken;
-    protected readonly Socket Socket;
-    public readonly IPEndPoint RemoteEndPoint;
-
+    protected readonly CancellationTokenSource CancelToken = new();
+    private readonly Pipe incoming = new(new PipeOptions(pauseWriterThreshold: 2 * 1024 * 1024, resumeWriterThreshold: 1024 * 1024));
+    protected Stream IncomingStream => incoming.Reader.AsStream();
+    public IPEndPoint RemoteEndPoint => IPEndPoint.Parse(Address);
     public string DebugFile = "";
     public bool IsOnline = true;
     public StreamWriter? Writer;
-
     public int DownStreamSeqNo;
     public int UpStreamSeqNo;
-
     public PacketFraming Framing;
-
-    public SocketConnection(Socket socket, IPEndPoint remote)
-    {
-        Socket = socket;
-        RemoteEndPoint = remote;
-        CancelToken = new CancellationTokenSource();
-
-        Start();
-    }
     public SessionStateEnum State { get; set; } = SessionStateEnum.INACTIVE;
     internal long ConnectionId { get; set; }
+    private int stopped;
 
+    protected override void OnConnected() => Start();
+    protected override void ReceiveData(byte[] buffer, int length)
+    {
+        // Copy before Yggdrasil reuses its receive buffer. Backpressure bounds queued bytes.
+        incoming.Writer.WriteAsync(buffer.AsMemory(0, length), CancelToken.Token).AsTask().GetAwaiter().GetResult();
+    }
+    protected override void OnClosed(ConnectionCloseType type) => Stop();
     public virtual void Start()
     {
         Logger.Info($"New connection from {RemoteEndPoint}.");
         State = SessionStateEnum.WAITING_FOR_TOKEN;
     }
-
     public virtual void Stop(bool isServerStop = false)
     {
-        try
-        {
-            Socket?.Shutdown(SocketShutdown.Both);
-        }
-        catch { }
-        finally
-        {
-            Socket?.Close();
-            Socket?.Dispose();
-        }
-        try
-        {
-            CancelToken.Cancel();
-            CancelToken.Dispose();
-        }
-        catch
-        {
-        }
-
+        if (Interlocked.Exchange(ref stopped, 1) != 0) return;
         IsOnline = false;
+        State = SessionStateEnum.INACTIVE;
+        CancelToken.Cancel();
+        incoming.Writer.CancelPendingFlush();
+        Close();
+        SocketListener.UnregisterConnection(this);
     }
-
-    public bool SocketConnected()
-    {
-        try
-        {
-            return !((Socket.Poll(1000, SelectMode.SelectRead) && (Socket.Available == 0)) || !Socket.Connected);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+    public bool SocketConnected() => Status == ConnectionStatus.Open;
 
     public void LogPacket(string sendOrRecv, ushort opcode, byte[] payload, PacketFraming framing)
     {
@@ -141,23 +115,15 @@ public class SocketConnection
         return Writer;
     }
 
-    public async Task SendPacket(byte[] packet)
+    public Task SendPacket(byte[] packet)
     {
-        try
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Send(packet, packet.Length, (_, _, result) =>
         {
-            if (Socket.Connected)
-            {
-                await Socket.SendAsync(
-                    new ArraySegment<byte>(packet),
-                    SocketFlags.None,
-                    CancelToken.Token
-                );
-            }
-        }
-        catch
-        {
-            // ignore
-        }
+            if (result == PostSendType.Sent) completion.TrySetResult();
+            else completion.TrySetException(new IOException("Connection closed before send completed."));
+        });
+        return completion.Task;
     }
 
     public async Task SendPacket(BasePacket packet, ushort seqNo = 0)

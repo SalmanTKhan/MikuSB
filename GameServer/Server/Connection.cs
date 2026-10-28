@@ -9,11 +9,12 @@ using System.Net.Sockets;
 
 namespace MikuSB.GameServer.Server;
 
-public class Connection(Socket socket, IPEndPoint remote) : SocketConnection(socket, remote)
+public class Connection : SocketConnection
 {
     private static readonly Logger Logger = new("GameServer");
 
     public PlayerInstance? Player { get; set; }
+    private int stopping;
 
     private static readonly HashSet<string> DummyPacketNames =
     [
@@ -29,6 +30,7 @@ public class Connection(Socket socket, IPEndPoint remote) : SocketConnection(soc
 
     public override void Stop(bool isServerStop = false)
     {
+        if (Interlocked.Exchange(ref stopping, 1) != 0) return;
         Player?.OnLogoutAsync();
         SocketListener.UnregisterConnection(this);
         base.Stop(isServerStop);
@@ -44,7 +46,7 @@ public class Connection(Socket socket, IPEndPoint remote) : SocketConnection(soc
     {
         try
         {
-            var stream = new NetworkStream(Socket, ownsSocket: false);
+            using var stream = IncomingStream;
 
             while (SocketConnected())
             {
@@ -86,7 +88,7 @@ public class Connection(Socket socket, IPEndPoint remote) : SocketConnection(soc
         }
         finally
         {
-            Socket.Close();
+            Stop();
         }
         Stop();
     }

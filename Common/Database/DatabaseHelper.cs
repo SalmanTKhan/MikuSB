@@ -1,4 +1,4 @@
-﻿﻿using MikuSB.Database.Account;
+using MikuSB.Database.Account;
 using MikuSB.Internationalization;
 using MikuSB.Database.Player;
 using MikuSB.Util;
@@ -28,12 +28,22 @@ public class DatabaseHelper
     {
         logger.Info(I18NManager.Translate("Server.ServerInfo.LoadingItem", I18NManager.Translate("Word.Database")));
         var f = new FileInfo(ConfigManager.Config.Path.DatabasePath + "/" + ConfigManager.Config.GameServer.DatabaseName);
-        if (!f.Exists && f.Directory != null) f.Directory.Create();
+        var options = ConfigManager.Config.Database;
+        var provider = options.Provider.ToLowerInvariant() switch
+        {
+            "sqlite" => DbType.Sqlite,
+            "mysql" => DbType.MySql,
+            _ => throw new InvalidOperationException("Database.Provider must be Sqlite or MySql.")
+        };
+        if (provider == DbType.Sqlite && !f.Exists && f.Directory != null) f.Directory.Create();
+        var connectionString = provider == DbType.Sqlite ? $"Data Source={f.FullName};" :
+            Environment.GetEnvironmentVariable(options.ConnectionStringEnvironmentVariable)
+            ?? throw new InvalidOperationException("MySQL connection environment variable is missing.");
 
         sqlSugarScope = new SqlSugarScope(new ConnectionConfig
         {
-            ConnectionString = $"Data Source={f.FullName};",
-            DbType = DbType.Sqlite,
+            ConnectionString = connectionString,
+            DbType = provider,
             IsAutoCloseConnection = true,
             ConfigureExternalServices = new ConfigureExternalServices
             {
@@ -128,9 +138,9 @@ public class DatabaseHelper
         {
             sqlSugarScope?.CodeFirst.InitTables<T>();
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            throw new InvalidOperationException($"Failed to initialize table {typeof(T).Name}.", ex);
         }
     }
 
@@ -351,7 +361,7 @@ public class DatabaseHelper
             return false;
 
         return sqlSugarScope.Ado
-            .SqlQuery<int>($"SELECT COALESCE(\"{CompleteAllQuestColumn}\", 0) FROM \"Player\" WHERE \"Uid\" = @Uid",
+            .SqlQuery<int>($"SELECT COALESCE(`{CompleteAllQuestColumn}`, 0) FROM `Player` WHERE `Uid` = @Uid",
                 new SugarParameter("@Uid", uid))
             .FirstOrDefault() != 0;
     }
@@ -368,12 +378,12 @@ public class DatabaseHelper
         if (!hasColumn)
         {
             sqlSugarScope.Ado.ExecuteCommand(
-                $"ALTER TABLE \"Player\" ADD COLUMN \"{CompleteAllQuestColumn}\" INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE `Player` ADD COLUMN `{CompleteAllQuestColumn}` INTEGER NOT NULL DEFAULT 0");
             completeAllQuestColumnExists = true;
         }
 
         sqlSugarScope.Ado.ExecuteCommand(
-            $"UPDATE \"Player\" SET \"{CompleteAllQuestColumn}\" = @Value WHERE \"Uid\" = @Uid",
+            $"UPDATE `Player` SET `{CompleteAllQuestColumn}` = @Value WHERE `Uid` = @Uid",
             new SugarParameter("@Value", player.CompleteAllQuestLevels ? 1 : 0),
             new SugarParameter("@Uid", player.Uid));
     }

@@ -4,6 +4,7 @@ namespace MikuSB.Configuration;
 
 public class ConfigContainer
 {
+    public DatabaseOptions Database { get; set; } = new();
     public HttpServerConfig HttpServer { get; set; } = new();
     public GameServerConfig GameServer { get; set; } = new();
     public PathConfig Path { get; set; } = new();
@@ -17,16 +18,17 @@ public class HttpServerConfig
     public string BindAddress { get; set; } = "0.0.0.0";
     public string PublicAddress { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 21500;
+    public int[] AdditionalTlsPorts { get; set; } = [13443, 18443, 31443];
     public bool EnableLog { get; set; } = false;
 
     public string GetDisplayAddress()
     {
-        return "http" + "://" + PublicAddress + ":" + Port;
+        return "https" + "://" + PublicAddress + ":" + Port;
     }
 
     public string GetBindDisplayAddress()
     {
-        return "http" + "://" + BindAddress + ":" + Port;
+        return "https" + "://" + BindAddress + ":" + Port;
     }
 }
 
@@ -99,4 +101,10 @@ public class LoaderOptions
     public string InGameConsoleLoaderPath { get; set; } = @"Patch\MikuSB-InGame-GUI-Console.Loader.dll";
     public string[] Arguments { get; set; } = ["-FeatureLevelES31", "-channelid=seasun", "-NoSplash"];
     public bool SetAllProxy { get; set; } = true;
+}
+
+public class DatabaseOptions
+{
+    public string Provider { get; set; } = "Sqlite";
+    public string ConnectionStringEnvironmentVariable { get; set; } = "MIKUSB_MYSQL_CONNECTION";
 }

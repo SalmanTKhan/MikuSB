@@ -18,7 +18,7 @@ public class IBLogic_GoodsRedDot : CallGSHandler<IbGoodsRedDotParam>
 
         if (req?.GoodsIds == null || req.GoodsIds.Count == 0)
         {
-            return Task.FromResult(CallGSResult.Ok("null"));
+            return Task.FromResult(CallGSResult.Ok(Echo(req)));
         }
 
         var player = context.Connection.Player!;
@@ -39,8 +39,12 @@ public class IBLogic_GoodsRedDot : CallGSHandler<IbGoodsRedDotParam>
         if (changed)
             DatabaseHelper.SaveDatabaseType(player.Data);
 
-        return Task.FromResult(CallGSResult.Ok("null", sync));
+        return Task.FromResult(CallGSResult.Ok(Echo(req), sync));
     }
+
+    // Retail echoes the request unchanged, e.g. {"tbList":[301]}.
+    private static string Echo(IbGoodsRedDotParam? req) =>
+        JsonSerializer.Serialize(new IbGoodsRedDotParam { GoodsIds = req?.GoodsIds ?? [] });
 
 }
 

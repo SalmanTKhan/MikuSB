@@ -12,7 +12,8 @@ public static class GameLaunchService
     {
         ConfigManager.LoadConfig();
         if (ConfigManager.Config.Loader.EnableInGameConsole
-            && ConfigManager.Config.Loader.AutoUpdateInGameConsole)
+            && ConfigManager.Config.Loader.AutoUpdateInGameConsole
+            && Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") != "1")
         {
             InGameConsoleDownloadService.EnsurePresent();
         }
@@ -59,6 +60,12 @@ public static class GameLaunchService
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to resume game process.");
 
                 return processInfo.dwProcessId;
+            }
+            catch
+            {
+                // Do not strand a suspended process when loading a runtime patch fails.
+                TerminateProcess(processInfo.hProcess, 1);
+                throw;
             }
             finally
             {
@@ -119,6 +126,8 @@ public static class GameLaunchService
                 var waitResult = WaitForSingleObject(remoteThread, 10_000);
                 if (waitResult != 0)
                     throw new Win32Exception($"Remote LoadLibraryW timed out or failed: {waitResult}");
+                if (!GetExitCodeThread(remoteThread, out var result) || result == 0)
+                    throw new Win32Exception("Runtime patch LoadLibraryW failed.");
             }
             finally
             {
@@ -237,6 +246,12 @@ public static class GameLaunchService
         string? lpCurrentDirectory,
         ref STARTUPINFOW lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(IntPtr processHandle, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeThread(IntPtr threadHandle, out uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr VirtualAllocEx(

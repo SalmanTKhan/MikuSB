@@ -92,12 +92,12 @@ public class Chapter_DealLevelSettlement : CallGSHandler<DealLevelSettlementPara
         return (tbParam?.DeepClone() ?? new JsonObject(), null);
     }
 
-    private static async ValueTask<(JsonNode Payload, NtfSyncPlayer? Sync)> HandleNewPrologueSettlementAsync(
+    public static async ValueTask<(JsonNode Payload, NtfSyncPlayer? Sync)> HandleNewPrologueSettlementAsync(
         PlayerInstance player,
         JsonNode? tbParam)
     {
         var request = tbParam?.Deserialize<NewPrologueSettlementParam>(CallGSJson.Options);
-        if (request == null || request.LevelId == 0)
+        if (request == null || request.LevelId == 0 || !player.IsActiveChapterLevel(request.LevelId))
         {
             Logger.Error($"Invalid plot settlement payload: {tbParam?.ToJsonString() ?? "null"}");
             return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
@@ -116,6 +116,7 @@ public class Chapter_DealLevelSettlement : CallGSHandler<DealLevelSettlementPara
         var response = new JsonObject();
         if (tbParam is JsonObject source && source.TryGetPropertyValue("bWaitServer", out var bWaitServer))
             response["bWaitServer"] = bWaitServer?.DeepClone();
+        response["nID"] = request.LevelId;
         response["tbShowAward"] = FlattenRewardCategories(result.Value.Rewards);
         return (response, result.Value.Sync);
     }
@@ -137,8 +138,9 @@ public class Chapter_DealLevelSettlement : CallGSHandler<DealLevelSettlementPara
             if (category is not JsonArray categoryRewards)
                 continue;
 
-            foreach (var reward in categoryRewards)
-                rewards.Add(reward?.DeepClone());
+            // Retail tbShowAward rows are plain [g,d,p,l,count]; drop the settlement category and stack id.
+            foreach (var reward in categoryRewards.OfType<JsonArray>())
+                rewards.Add(new JsonArray(reward.Take(5).Select(n => n?.DeepClone()).ToArray()));
         }
 
         return rewards;
@@ -158,6 +160,13 @@ public class Chapter_DealLevelSettlement : CallGSHandler<DealLevelSettlementPara
 
         if (levelType == QuestLevelType.Chapter && player.QuestManager.IsPlotLevel(req.LevelId))
         {
+            // Retail enters plot levels through Chapter_EnterLevel and settles with that seed (nStar=-1).
+            if (!player.IsLevelSession(QuestLevelType.Chapter, req.LevelId, req.Seed) || req.Seed == 0)
+            {
+                Logger.Error($"Rejected plot settlement outside its session: levelId={req.LevelId} seed={req.Seed}");
+                return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
+            }
+
             var plotResult = await player.QuestManager.SettlePlotLevelAsync(req.LevelId);
             if (plotResult == null)
             {

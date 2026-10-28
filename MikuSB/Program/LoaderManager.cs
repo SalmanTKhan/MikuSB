@@ -60,8 +60,7 @@ public class LoaderManager : MikuSB
         catch (Exception e)
         {
             Logger.Error(I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.Config")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
 
         // Starting the server
@@ -78,8 +77,7 @@ public class LoaderManager : MikuSB
         {
             Logger.Error(
                 I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.Config")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
 
         // Load the language
@@ -92,42 +90,25 @@ public class LoaderManager : MikuSB
         {
             Logger.Error(
                 I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.Language")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
     }
 
-    public static void InitDatabase()
+    public static async Task InitDatabase()
     {
-        // Initialize the database
-        try
-        {
-            _ = Task.Run(DatabaseHelper.Initialize); // do not wait
-
-            while (!DatabaseHelper.LoadAccount) Thread.Sleep(100);
-
-            Logger.Info(I18NManager.Translate("Server.ServerInfo.LoadedItem",
-                I18NManager.Translate("Word.DatabaseAccount")));
-        }
-        catch (Exception e)
-        {
-            Logger.Error(
-                I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.Database")), e);
-            Console.ReadLine();
-            return;
-        }
+        // Propagate failures instead of waiting forever on a flag from a faulted task.
+        await Task.Run(DatabaseHelper.Initialize);
     }
 
     public static async Task InitSdkServer()
     {
-        SdkServer.SdkServer.Start([]);
+        await SdkServer.SdkServer.Start([]);
         Logger.Info(I18NManager.Translate("Server.ServerInfo.ServerRunning", I18NManager.Translate("Word.Dispatch"),
             ConfigManager.Config.HttpServer.GetDisplayAddress()));
 
         //KcpListener.BaseConnection = typeof(Connection);
         //KcpListener.StartListener();
-        SocketListener.BaseConnection = typeof(Connection);
-        SocketListener.StartListener();
+        SocketListener.StartListener<Connection>();
 
         await Task.CompletedTask;
     }
@@ -159,8 +140,7 @@ public class LoaderManager : MikuSB
         {
             Logger.Error(
                 I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.CustomData")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
 
         // Load the game data
@@ -174,12 +154,11 @@ public class LoaderManager : MikuSB
         {
             Logger.Error(
                 I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.GameData")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
     }
 
-    public static async Task InitCommand(CancellationToken exitToken)
+    public static void InitCommandServices()
     {
         // Register the command handlers
         try
@@ -191,13 +170,13 @@ public class LoaderManager : MikuSB
             Logger.Error(
                 I18NManager.Translate("Server.ServerInfo.FailedToInitializeItem",
                     I18NManager.Translate("Word.Command")), e);
-            Console.ReadLine();
-            return;
+            throw;
         }
         IConsole.OnConsoleExcuteCommand += CommandExecutor.ConsoleExcuteCommand;
         CommandExecutor.OnRunCommand += (sender, e) => { _ = CommandManager.HandleCommand(e, sender); };
         InGameConsoleBridge.ExecuteCommandAsync = InGameConsoleCommandService.ExecuteAsync;
 
-        await IConsole.ListenConsole(exitToken);
     }
+
+    public static Task InitCommand(CancellationToken exitToken) => IConsole.ListenConsole(exitToken);
 }

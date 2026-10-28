@@ -1,105 +1,39 @@
-﻿using System.Net.Sockets;
+using System.Collections.Concurrent;
 using System.Net;
 using MikuSB.Util;
-using MikuSB.Internationalization;
+using Yggdrasil.Network.TCP;
 
 namespace MikuSB.TcpSharp;
 
 public class SocketListener
 {
-    private static IPEndPoint? ListenAddress;
-    private static readonly Logger Logger = new("GameServer");
+    public static readonly ConcurrentDictionary<long, SocketConnection> Connections = new();
+    private static Action? stopListener;
+    private static long nextId;
+    public static IPEndPoint? LocalEndPoint { get; private set; }
 
-    private static Socket? serverSocket;
-
-    public static readonly SortedList<long, SocketConnection> Connections = [];
-
-    public static Type BaseConnection { get; set; } = typeof(SocketConnection);
-
-    private static int PORT => ConfigManager.Config.GameServer.Port;
-
-    private static long _nextId = 0;
-
-    public static void StartListener()
+    public static void StartListener<T>() where T : SocketConnection, new()
     {
-        if (serverSocket != null)
-            throw new InvalidOperationException("SocketListener already started.");
-
-        ListenAddress = new IPEndPoint(IPAddress.Parse(ConfigManager.Config.GameServer.BindAddress), PORT);
-
-        serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        serverSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        serverSocket.Bind(ListenAddress);
-        serverSocket.Listen(100);
-
-        Logger.Info(I18NManager.Translate("Server.ServerInfo.ServerRunning",
-            I18NManager.Translate("Word.Game"),
-            ConfigManager.Config.GameServer.GetDisplayAddress()));
-
-        _ = Task.Run(AcceptLoop);
-    }
-
-    private static async Task AcceptLoop()
-    {
-        if (serverSocket == null)
-            throw new InvalidOperationException("Server socket not initialized.");
-
-        try
+        if (stopListener != null) throw new InvalidOperationException("Listener already started.");
+        var config = ConfigManager.Config.GameServer;
+        var acceptor = new TcpConnectionAcceptor<T>(config.BindAddress, config.Port);
+        acceptor.ConnectionAccepted += connection =>
         {
-            while (true)
-            {
-                Socket clientSocket = await serverSocket.AcceptAsync();
-                var remote = clientSocket.RemoteEndPoint as IPEndPoint;
-
-                if (remote == null)
-                {
-                    clientSocket.Close();
-                    continue;
-                }
-
-                try
-                {
-                    var connection = (SocketConnection?)Activator.CreateInstance(BaseConnection, clientSocket, remote);
-
-                    if (connection == null)
-                    {
-                        Logger.Error($"Failed to create connection instance from {BaseConnection.Name}");
-                        clientSocket.Close();
-                        continue;
-                    }
-
-                    var id = Interlocked.Increment(ref _nextId);
-                    connection.ConnectionId = id;
-
-                    Connections[id] = connection;
-                    Logger.Info($"Accepted connection #{id} from {remote}");
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"Error creating connection: {ex}");
-                    clientSocket.Close();
-                }
-            }
-        }
-        catch (ObjectDisposedException)
-        {
-            Logger.Info("Server stopped listening.");
-        }
+            connection.ConnectionId = Interlocked.Increment(ref nextId);
+            Connections[connection.ConnectionId] = connection;
+        };
+        acceptor.AcceptionException += ex => new Logger("GameServer").Error("Accept failed", ex);
+        acceptor.Listen(100);
+        LocalEndPoint = acceptor.LocalEndPoint;
+        stopListener = acceptor.Stop;
+        new Logger("GameServer").Info($"Yggdrasil listening on {acceptor.LocalEndPoint}");
     }
-
-    public static SocketConnection? GetConnectionByEndPoint(IPEndPoint ep)
+    public static void StopListener()
     {
-        Connections.TryGetValue(ep.GetHashCode(), out var conn);
-        return conn;
+        Interlocked.Exchange(ref stopListener, null)?.Invoke();
+        foreach (var connection in Connections.Values) connection.Stop(true);
     }
-
-    public static void UnregisterConnection(SocketConnection socket)
-    {
-        if (socket == null) return;
-
-        if (Connections.Remove(socket.ConnectionId))
-        {
-            Logger.Info($"Connection #{socket.ConnectionId} with {socket.RemoteEndPoint} has been closed");
-        }
-    }
+    public static SocketConnection? GetConnectionByEndPoint(IPEndPoint ep) =>
+        Connections.Values.FirstOrDefault(c => c.RemoteEndPoint.Equals(ep));
+    public static void UnregisterConnection(SocketConnection connection) => Connections.TryRemove(connection.ConnectionId, out _);
 }

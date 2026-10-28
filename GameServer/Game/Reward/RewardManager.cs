@@ -33,6 +33,61 @@ public sealed class RewardManager(PlayerInstance player) : BasePlayerManager(pla
         return response;
     }
 
+    /// <summary>
+    /// Grants a chapter level in the retail Chapter_LevelSettlement shape captured for 11421/11422/51471:
+    /// a single list of [g,d,p,l,count,category] rows (1 first drop, 2 base drop, 3 random drop; 3 unobserved),
+    /// where supplies rows also carry the inventory stack id. Retail grants the base drop on first clear too.
+    /// </summary>
+    public async ValueTask<JsonArray> GrantChapterLevelRewardsAsync(
+        ILevelRewardConfig levelConfig,
+        bool isFirstClear,
+        uint seed,
+        NtfSyncPlayer sync)
+    {
+        var rows = new JsonArray();
+        foreach (var (category, reward) in ResolveChapterDrops(levelConfig, isFirstClear, seed))
+        {
+            if (await GrantRewardAsync(reward, sync))
+                rows.Add(ToChapterRow(category, reward));
+        }
+
+        await GrantPlayerExperienceAsync(levelConfig.PlayerExp(), sync);
+        Player.CharacterManager.AddExperienceToLineup(levelConfig.RoleExp(), sync, Player.ActiveLevelTeamId);
+        return new JsonArray(rows);
+    }
+
+    public JsonArray ResolveChapterLevelRewards(ILevelRewardConfig levelConfig, bool isFirstClear, uint seed) =>
+        new(new JsonArray(ResolveChapterDrops(levelConfig, isFirstClear, seed)
+            .Select(x => (JsonNode?)ToChapterRow(x.Category, x.Reward)).ToArray()));
+
+    private List<(uint Category, RewardEntry Reward)> ResolveChapterDrops(
+        ILevelRewardConfig levelConfig,
+        bool isFirstClear,
+        uint seed)
+    {
+        var random = new Random(unchecked((int)(seed ^ levelConfig.ID)));
+        var drops = new List<(uint, RewardEntry)>();
+        drops.AddRange(ResolveDropIds(levelConfig.FirstDropIds(), isFirstClear, random).Select(r => (1u, r)));
+        drops.AddRange(ResolveDropIds(levelConfig.BaseDropIds(), true, random).Select(r => (2u, r)));
+        drops.AddRange(ResolveDropIds(levelConfig.RandomDropIds(), true, random).Select(r => (3u, r)));
+        return drops;
+    }
+
+    private JsonArray ToChapterRow(uint category, RewardEntry reward)
+    {
+        var row = reward.ToJson();
+        row.Add((int)category);
+        if ((ItemTypeEnum)reward.Genre == ItemTypeEnum.TYPE_SUPPLIES)
+        {
+            var templateId = GameResourceTemplateId.FromGdpl(reward.Genre, reward.Detail, reward.Particular, reward.Level);
+            var stack = Player.InventoryManager.InventoryData.Items.Values.FirstOrDefault(x => x.TemplateId == templateId);
+            if (stack != null)
+                row.Add((int)stack.UniqueId);
+        }
+
+        return row;
+    }
+
     public JsonArray ResolveLevelRewards(ILevelRewardConfig levelConfig, bool isFirstClear, uint seed)
     {
         var random = new Random(unchecked((int)(seed ^ levelConfig.ID)));
@@ -60,6 +115,64 @@ public sealed class RewardManager(PlayerInstance player) : BasePlayerManager(pla
         }
 
         return response;
+    }
+
+    /// <summary>
+    /// Checks the template-dependent preconditions of every row before any grant is applied,
+    /// so callers that mark claims can reject a configuration they cannot fully honour.
+    /// </summary>
+    public bool CanGrantConfiguredRewards(IEnumerable<IReadOnlyList<uint>> rewardRows, out string? reason)
+    {
+        foreach (var row in rewardRows)
+        {
+            if (row.Count < 5 || row[4] == 0)
+                continue;
+
+            var templateId = GameResourceTemplateId.FromGdpl(row[0], row[1], row[2], row[3]);
+            switch ((ItemTypeEnum)row[0])
+            {
+                case ItemTypeEnum.TYPE_SUPPLIES when !GameData.SuppliesData.ContainsKey((uint)templateId):
+                case ItemTypeEnum.TYPE_USEABLE when !GameData.OtherItemData.ContainsKey(templateId):
+                    reason = $"missing item template {string.Join(',', row.Take(4))}";
+                    return false;
+                case ItemTypeEnum.TYPE_CARD or ItemTypeEnum.TYPE_WEAPON or ItemTypeEnum.TYPE_SUPPORT
+                    or ItemTypeEnum.TYPE_SUPPLIES or ItemTypeEnum.TYPE_USEABLE or ItemTypeEnum.TYPE_WEAPON_PART
+                    or ItemTypeEnum.TYPE_CARD_SKIN or ItemTypeEnum.TYPE_HOUSE or ItemTypeEnum.TYPE_PROFILE
+                    or ItemTypeEnum.TYPE_FRAME or ItemTypeEnum.TYPE_BADGE or ItemTypeEnum.TYPE_COVER
+                    or ItemTypeEnum.TYPE_NAMECARD or ItemTypeEnum.TYPE_EXPRESSION or ItemTypeEnum.TYPE_BUBBLE
+                    or ItemTypeEnum.TYPE_ANALYST or ItemTypeEnum.TYPE_WEAPON_SKIN or ItemTypeEnum.TYPE_MANIFESTATION
+                    or ItemTypeEnum.TYPE_CARD_SKIN_PART or ItemTypeEnum.TYPE_AR or ItemTypeEnum.TYPE_CALL
+                    or ItemTypeEnum.TYPE_MONSTER_CARD:
+                    continue;
+                default:
+                    reason = $"unsupported reward genre {row[0]}";
+                    return false;
+            }
+        }
+
+        reason = null;
+        return true;
+    }
+
+    public async ValueTask<(JsonArray Granted, bool Complete)> GrantConfiguredRewardsStrictAsync(
+        IReadOnlyList<IReadOnlyList<uint>> rewardRows,
+        NtfSyncPlayer sync)
+    {
+        var response = new JsonArray();
+        var complete = true;
+        foreach (var row in rewardRows)
+        {
+            if (row.Count < 5 || row[4] == 0)
+                continue;
+
+            var reward = new RewardEntry(row[0], row[1], row[2], row[3], row[4]);
+            if (await GrantRewardAsync(reward, sync))
+                response.Add(reward.ToJson());
+            else
+                complete = false;
+        }
+
+        return (response, complete);
     }
 
     public NtfSyncPlayer BuildFullSync()

@@ -27,13 +27,22 @@ public static class CertHelper
     private static X509Certificate2 LoadOrCreatePersisted(string fileHost, string subjectHost)
     {
         Directory.CreateDirectory(CertificateDirectory);
-        var pfxPath = Path.Combine(CertificateDirectory, $"{SanitizeFileName(fileHost)}.pfx");
+        var basePath = Path.Combine(CertificateDirectory, SanitizeFileName(fileHost));
+        var pfxPath = basePath + ".pfx";
+        X509Certificate2 certificate;
         if (File.Exists(pfxPath))
-            return LoadPkcs12(File.ReadAllBytes(pfxPath));
+            certificate = LoadPkcs12(File.ReadAllBytes(pfxPath));
+        else
+        {
+            using var generated = CreateSelfSigned(subjectHost);
+            File.WriteAllBytes(pfxPath, generated.Export(X509ContentType.Pfx, Password));
+            certificate = LoadPkcs12(File.ReadAllBytes(pfxPath));
+        }
 
-        var certificate = CreateSelfSigned(subjectHost);
-        File.WriteAllBytes(pfxPath, certificate.Export(X509ContentType.Pfx, Password));
-        return LoadPkcs12(File.ReadAllBytes(pfxPath));
+        // Export only the public certificate. Recreate it from the PFX on startup so
+        // existing installations get a PEM and it cannot become stale after renewal.
+        File.WriteAllText(basePath + ".pem", certificate.ExportCertificatePem());
+        return certificate;
     }
 
     private static X509Certificate2 LoadPkcs12(byte[] pfx)

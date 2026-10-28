@@ -162,12 +162,18 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             if (settlementSeed.Val == seed)
             {
                 var duplicateSync = Player.RewardManager.BuildFullSync();
-                var duplicateRewards = Player.RewardManager.ResolveLevelRewards(levelConfig, levelPass.Val <= 1, seed);
+                var duplicateRewards = levelType == QuestLevelType.Chapter
+                    ? Player.RewardManager.ResolveChapterLevelRewards(levelConfig, levelPass.Val <= 1, seed)
+                    : Player.RewardManager.ResolveLevelRewards(levelConfig, levelPass.Val <= 1, seed);
                 return new QuestSettlementResult(duplicateRewards, duplicateSync);
             }
 
             var sync = new NtfSyncPlayer();
-            await Player.RewardManager.GrantLevelRewardsAsync(levelConfig, isFirstClear, seed, sync);
+            var chapterRewards = levelType == QuestLevelType.Chapter
+                ? await Player.RewardManager.GrantChapterLevelRewardsAsync(levelConfig, isFirstClear, seed, sync)
+                : null;
+            if (chapterRewards == null)
+                await Player.RewardManager.GrantLevelRewardsAsync(levelConfig, isFirstClear, seed, sync);
 
             levelState.Val |= (uint)starMask & LevelStarMask;
             if (levelType == QuestLevelType.Daily)
@@ -185,7 +191,7 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             DatabaseHelper.SaveDatabaseType(Player.InventoryManager.InventoryData);
             DatabaseHelper.SaveDatabaseType(Player.CharacterManager.CharacterData);
             return new QuestSettlementResult(
-                Player.RewardManager.ResolveLevelRewards(levelConfig, isFirstClear, seed),
+                chapterRewards ?? Player.RewardManager.ResolveLevelRewards(levelConfig, isFirstClear, seed),
                 sync);
         }
         finally
@@ -211,7 +217,7 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
 
             var levelPass = Player.Attributes.GetOrCreate(LevelPassGroupId, levelId);
             var sync = new NtfSyncPlayer();
-            await Player.RewardManager.GrantLevelRewardsAsync(levelConfig, true, levelId, sync);
+            var rewards = await Player.RewardManager.GrantChapterLevelRewardsAsync(levelConfig, true, levelId, sync);
 
             levelState.Val |= 1u << 8;
             if (levelPass.Val == 0)
@@ -226,9 +232,7 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             DatabaseHelper.SaveDatabaseType(Player.Data);
             DatabaseHelper.SaveDatabaseType(Player.InventoryManager.InventoryData);
             DatabaseHelper.SaveDatabaseType(Player.CharacterManager.CharacterData);
-            return new QuestSettlementResult(
-                Player.RewardManager.ResolveLevelRewards(levelConfig, true, levelId),
-                sync);
+            return new QuestSettlementResult(rewards, sync);
         }
         finally
         {
@@ -275,7 +279,8 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             if (rowNode is not JsonArray row || row.Count < 2 ||
                 !TryGetUInt(row[0], out var levelId) ||
                 !TryGetUInt(row[1], out var passCount) ||
-                levelId == 0 || !GameData.ChapterLevelData.ContainsKey(levelId))
+                levelId == 0 || passCount > 1 || !GameData.ChapterLevelData.ContainsKey(levelId) ||
+                (!Player.IsActiveChapterLevel(levelId) && GetPassCount(levelId) == 0))
                 return false;
 
             updates.Add((levelId, passCount));

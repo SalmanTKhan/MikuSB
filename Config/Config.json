@@ -1,8 +1,17 @@
 {
+  "Database": {
+    "Provider": "Sqlite",
+    "ConnectionStringEnvironmentVariable": "MIKUSB_MYSQL_CONNECTION"
+  },
   "HttpServer": {
     "BindAddress": "0.0.0.0",
     "PublicAddress": "127.0.0.1",
-    "Port": 21500
+    "Port": 21500,
+    "AdditionalTlsPorts": [
+      13443,
+      31443
+    ],
+    "EnableLog": false
   },
   "GameServer": {
     "BindAddress": "0.0.0.0",
@@ -29,8 +38,12 @@
     ],
     "ServerProfile": {
       "Name": "Miku-chan",
-      "Uid": 80
+      "Signature": "SnowBreak Private Server",
+      "Uid": 80,
+      "Level": 100,
+      "Gender": 1
     },
+    "EnableGmMenu": false,
     "AutoCreateUser": true,
     "SavePersonalDebugFile": false,
     "AutoSendResponseWhenNoHandler": true,
@@ -48,8 +61,8 @@
     "PatchPaths": [
       "Patch\\MikuSB-Patch.dll"
     ],
-    "EnableInGameConsole": true,
-    "AutoUpdateInGameConsole": true,
+    "EnableInGameConsole": false,
+    "AutoUpdateInGameConsole": false,
     "InGameConsoleLoaderPath": "Patch\\MikuSB-InGame-GUI-Console.Loader.dll",
     "Arguments": [
       "-FeatureLevelES31",

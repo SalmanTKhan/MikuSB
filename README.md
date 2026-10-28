@@ -1,7 +1,7 @@
 # MikuSB
 
 <strong>MikuSB</strong> is a server emulator of a certain dungeon anime game.   
-`SdkServer`, `GameServer`, and an optional local HTTP/HTTPS proxy are started from a single `net9.0` application.  
+`SdkServer`, `GameServer`, and an optional local HTTP/HTTPS proxy are started from a single `net10.0` application.
 
 [Discord](https://discord.gg/6MvWY774hX)
 
@@ -22,7 +22,7 @@ Request a refund immediately and report the seller to us on Discord with any rel
   - Accepts TCP-based game connections
   - Handles `ReqCallGS` and some normal packets
 - `Proxy`
-  - Listens on `127.0.0.1:8888` when enabled
+  - Listens on `127.0.0.1:18888` as a SOCKS5 proxy when enabled
   - Redirects some Snowbreak-related domains to the local `SdkServer`
 - `Common` / `Proto` / `TcpSharp`
   - Shared data, protobuf definitions, and networking infrastructure
@@ -40,16 +40,14 @@ Request a refund immediately and report the seller to us on Discord with any rel
 
 - [.NET SDK 10.0](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 
+See [local setup](docs/setup.md) for guided server and client setup, and [preservation notes](docs/preservation-setup.md) for research and validation details.
+
 ## Running
 
-1. Restore dependencies and build.
-```powershell
-dotnet build
-```
-2. Set `GamePath` in `Config.json` to the path of your game executable.
-3. Start the server and run the `game` command.
-4. Create an account in the server console.  
-5. Enjoy.
+1. Obtain compatible resource data separately and install Python 3.
+2. Run `setup.bat` on Windows or `python3 tools/setup.py` on Linux/macOS and enter the requested paths.
+3. Start the server with `start-server.bat` or `sh start-server.sh`.
+4. For the Windows client, follow the runtime patch instructions in [local setup](docs/setup.md), then run `start-client.bat`.
 
 ## Feature List
 

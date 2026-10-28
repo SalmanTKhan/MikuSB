@@ -30,7 +30,7 @@ public static class UpdateService
 
     public static async Task<bool> TryStartSelfUpdateAsync()
     {
-        if (!UpdateEnabled)
+        if (!UpdateEnabled || Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") == "1")
             return false;
 
         if (string.IsNullOrWhiteSpace(RepositoryOwner)
@@ -134,6 +134,8 @@ public static class UpdateService
     {
         if (!AreRequiredResourcesPresent())
         {
+            if (Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") == "1")
+                throw new FileNotFoundException("Local resources missing; configure Path.ResourcePath.");
             Logger.Warn("Required resources are missing. Downloading resource package.");
             await DownloadAndInstallResourcesAsync();
         }

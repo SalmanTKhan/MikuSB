@@ -20,7 +20,7 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
     {
         var player = context.Connection.Player!;
 
-        if (req == null || req.Id == 0 || req.Materials == null || req.Materials.Count == 0)
+        if (req == null || req.Id <= 0 || req.Materials == null || req.Materials.Count == 0)
         {
             return Task.FromResult(CallGSResult.Error("error.BadParam"));
         }
@@ -52,10 +52,12 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
         var requestedMaterials = new Dictionary<uint, uint>();
         foreach (var row in req.Materials)
         {
-            if (row == null || row.Id == 0 || row.Num == 0)
+            if (row == null || row.Id <= 0 || row.Num == 0)
                 continue;
 
-            requestedMaterials[(uint)row.Id] = requestedMaterials.GetValueOrDefault((uint)row.Id) + row.Num;
+            var previous = requestedMaterials.GetValueOrDefault((uint)row.Id);
+            if (row.Num > uint.MaxValue - previous) return Task.FromResult(CallGSResult.Error("error.BadParam"));
+            requestedMaterials[(uint)row.Id] = previous + row.Num;
         }
 
         if (requestedMaterials.Count == 0)
@@ -88,6 +90,13 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
             return Task.FromResult(CallGSResult.Error("tip.material_not_enough"));
         }
 
+        // Resolve the outcome before mutating anything so an overflow cannot leave materials consumed.
+        var (newLevel, newExp) = ApplyCardExp(card.Level, card.Exp, totalExp, levelCap);
+        if (newExp > int.MaxValue || totalSilverCost > uint.MaxValue)
+        {
+            return Task.FromResult(CallGSResult.Error("error.BadParam"));
+        }
+
         var syncItems = new List<Item>();
         foreach (var (itemId, count) in requestedMaterials)
         {
@@ -105,11 +114,9 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
             }
         }
 
-        silverAttr.Val -= checked((uint)totalSilverCost);
-
-        var (newLevel, newExp) = ApplyCardExp(card.Level, card.Exp, totalExp, levelCap);
+        silverAttr.Val -= (uint)totalSilverCost;
         card.Level = newLevel;
-        card.Exp = checked((int)newExp);
+        card.Exp = (int)newExp;
         syncItems.Add(card.ToProto());
 
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
@@ -165,11 +172,7 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
 
     private static List<(uint AccountLevel, uint CardLevel)> LoadCardLevelLimit(int levelLimitId)
     {
-        var path = Path.Combine(
-            AppContext.BaseDirectory,
-            "Resources",
-            "item",
-            "level_limit.json");
+        var path = Path.Combine(MikuSB.Util.ConfigManager.Config.Path.ResourcePath, "item", "level_limit.json");
 
         if (!File.Exists(path))
             return [];
