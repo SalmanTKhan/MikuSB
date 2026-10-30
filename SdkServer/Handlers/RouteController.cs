@@ -387,12 +387,15 @@ public class RouteController : ControllerBase
 
     [HttpGet("/seasun/getAccountInfoForGame")]
     [HttpPost("/seasun/getAccountInfoForGame")]
-    public IActionResult GetAccountInfoForGame(
+    public async Task<IActionResult> GetAccountInfoForGame(
         [FromQuery] string? uid,
         [FromForm] string? form_uid
     )
     {
-        var finalUid = uid ?? form_uid;
+        var finalUid = uid ?? form_uid
+            ?? await GetJsonBodyValue("uid")
+            ?? await GetJsonBodyValue("passportId")
+            ?? await GetJsonBodyValue("channelUid");
         var account = ResolveAccountByUid(finalUid);
         if (account == null)
         {
