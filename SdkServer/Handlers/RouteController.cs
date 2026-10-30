@@ -12,6 +12,7 @@ namespace MikuSB.SdkServer.Handlers;
 [ApiController]
 public class RouteController : ControllerBase
 {
+    private static readonly Logger AuthLogger = new("SdkAuth");
     public static ConfigContainer Config = ConfigManager.Config;
 
     public static object BuildServerList(string version = "")
@@ -70,7 +71,9 @@ public class RouteController : ControllerBase
 
             var json = Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
             using var document = JsonDocument.Parse(json);
-            return document.RootElement.TryGetProperty("uid", out var uid) ? JsonValueToString(uid) : null;
+            return TryGetPropertyIgnoreCase(document.RootElement, "uid", out var uid)
+                ? JsonValueToString(uid)
+                : null;
         }
         catch
         {
@@ -86,6 +89,24 @@ public class RouteController : ControllerBase
             JsonValueKind.Number => value.GetRawText(),
             _ => null
         };
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     [HttpGet("/getGameConfig")]
@@ -200,7 +221,7 @@ public class RouteController : ControllerBase
             if (document.RootElement.ValueKind != JsonValueKind.Object)
                 return null;
 
-            return document.RootElement.TryGetProperty(propertyName, out var value)
+            return TryGetPropertyIgnoreCase(document.RootElement, propertyName, out var value)
                 ? JsonValueToString(value)
                 : null;
         }
@@ -247,7 +268,12 @@ public class RouteController : ControllerBase
         var finalToken = token ?? form_token ?? await GetJsonBodyValue("token");
         var account = ResolveAccountForSdkLogin(null, finalUid, finalToken);
         if (account == null)
+        {
+            AuthLogger.Warn($"loginByToken rejected uidPresent={!string.IsNullOrWhiteSpace(finalUid)} tokenPresent={!string.IsNullOrWhiteSpace(finalToken)}");
             return BuildLoginFailedResponse("Account not found.");
+        }
+
+        AuthLogger.Info($"loginByToken accepted uidPresent={!string.IsNullOrWhiteSpace(finalUid)} tokenPresent={!string.IsNullOrWhiteSpace(finalToken)}");
 
         var responseUid = account.Uid.ToString();
         var responseToken = account.GenerateComboToken();
@@ -366,9 +392,15 @@ public class RouteController : ControllerBase
         [FromForm] string? form_uid
     )
     {
-        var account = ResolveAccountByUid(uid ?? form_uid);
+        var finalUid = uid ?? form_uid;
+        var account = ResolveAccountByUid(finalUid);
         if (account == null)
+        {
+            AuthLogger.Warn($"getAccountInfoForGame rejected uidPresent={!string.IsNullOrWhiteSpace(finalUid)}");
             return BuildNotFoundResponse("Account not found.");
+        }
+
+        AuthLogger.Info($"getAccountInfoForGame accepted uidPresent={!string.IsNullOrWhiteSpace(finalUid)}");
 
         var uidString = account.Uid.ToString();
 
@@ -449,9 +481,15 @@ public class RouteController : ControllerBase
     [HttpGet("/account/query-uid/{appId}")]
     public IActionResult QueryUid(string appId, [FromQuery] string authInfo)
     {
-        var account = ResolveAccountByUid(ExtractUid(authInfo));
+        var extractedUid = ExtractUid(authInfo);
+        var account = ResolveAccountByUid(extractedUid);
         if (account == null)
+        {
+            AuthLogger.Warn($"queryUid rejected authInfoPresent={!string.IsNullOrWhiteSpace(authInfo)} extractedUidPresent={!string.IsNullOrWhiteSpace(extractedUid)}");
             return BuildNotFoundResponse("Account not found.");
+        }
+
+        AuthLogger.Info($"queryUid accepted authInfoPresent={!string.IsNullOrWhiteSpace(authInfo)} extractedUidPresent={!string.IsNullOrWhiteSpace(extractedUid)}");
 
         var uid = account.Uid.ToString();
 
