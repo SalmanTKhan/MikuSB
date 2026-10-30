@@ -68,8 +68,14 @@ chmod 700 ~/.local/share/mikusb-vps/setup-cachyos.sh
 bash ~/.local/share/mikusb-vps/setup-cachyos.sh
 ```
 
-The script embeds the VPS's public wildcard trust certificate, adds it to the system trust store, maps `xgsdk.xoyo.games` to the VPS address in `/etc/hosts`, and checks SDK TLS with curl. It does not connect to the VPS over SSH and needs no Steam launch option. The game server list advertises the VPS IP for gameplay. Use `MIKUSB_VPS_HOST=laima.ddns.net bash ~/.local/share/mikusb-vps/setup-cachyos.sh` to resolve the DDNS A record instead of the default `192.227.172.144`.
+The script embeds the VPS's public wildcard trust certificate, adds it to the system trust store, maps `xgsdk.xoyo.games` to the VPS address in `/etc/hosts`, and checks SDK TLS with curl. It also uses `nft` to redirect the current user's TCP connections from `49.51.66.126:5200` to the VPS on port `5200`. This is the game address observed with Windows client version 3.6.0.186; the redirect still needs a live Steam Deck or CachyOS client check. The script does not connect to the VPS over SSH and needs no Steam launch option. Use `MIKUSB_VPS_HOST=laima.ddns.net bash ~/.local/share/mikusb-vps/setup-cachyos.sh` to resolve the DDNS A record instead of the default `192.227.172.144`.
 
 Editing `/etc/hosts` and installing a trusted certificate require administrator access. On SteamOS, the script temporarily disables the read-only root filesystem and reenables it when it exits. It will ask for the Deck's sudo password; set one through the Steam Devkit Management Tool first if none is configured. On CachyOS it uses the normal sudo prompt.
 
-For the Deck-to-VPS setup, allow inbound TCP 5200 for gameplay and 21500, 13443, 18443, and 31443 for SDK HTTPS. The Deck connects directly to the VPS; do not start a local server or configure the local SOCKS5 proxy for this setup. Do not expose SOCKS5 port 18888. To undo the setup, remove the line tagged `MikuSB VPS SDK routing` from `/etc/hosts`, remove `/etc/ca-certificates/trust-source/anchors/mikusb-vps.crt`, and run `sudo update-ca-trust extract`. Successful SDK curl verifies network and certificate routing; gameplay still needs testing in Snowbreak.
+The game redirect is restored at boot on systemd systems. On other systems, rerun the script after reboot. If the VPS address changes, rerun it to refresh both the hostname and game redirect. To remove only the game redirect and its service, run:
+
+```bash
+bash ~/.local/share/mikusb-vps/setup-cachyos.sh --remove-game-route
+```
+
+If a different client build uses another game address, set `MIKUSB_GAME_TARGET_IP` to the observed IPv4 address when rerunning setup. For the Deck-to-VPS setup, allow inbound TCP 5200 for gameplay and 21500, 13443, 18443, and 31443 for SDK HTTPS. Do not expose SOCKS5 port 18888. To remove the SDK setup as well, remove the line tagged `MikuSB VPS SDK routing` from `/etc/hosts`, remove `/etc/ca-certificates/trust-source/anchors/mikusb-vps.crt`, and run `sudo update-ca-trust extract`. Successful SDK curl verifies network and certificate routing; gameplay still needs testing in Snowbreak.
