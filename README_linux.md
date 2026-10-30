@@ -1,6 +1,6 @@
 # MikuSB on Linux and Proton
 
-The Linux server can be started from source. The original Windows client under Proton has **not been verified** with this checkout. In particular, setting a proxy environment variable does not guarantee that the game's SDK and game sockets use it. A Windows Steam client reached the lobby using a Windows-only runtime redirect hook; that result does not establish Proton compatibility.
+The Linux server can be started from source. A user reported that the original client connected to a remote VPS on Steam Deck using the redirect described below. Other Proton installations still need validation. Proxy environment variables do not guarantee that the game's SDK and game sockets use the proxy.
 
 ## Choose the setup that matches your server
 
@@ -54,28 +54,51 @@ This verifies curl's connection only; Proton may use a different trust store or 
 
 If login fails, check the server logs for `/getGameConfig`, `/seasun/config`, `/seasun/login`, `/seasun/loginByToken`, `/account/query-uid/{appId}`, and `/seasun/getAccountInfoForGame`. HTTP `200` alone does not mean SDK authentication succeeded; inspect the server's `SdkAuth` accepted/rejected messages for the account lookup outcome. No relevant request indicates a routing or TLS boundary before that handler. The handler accepts an email and creates a local account when `ServerOption.AutoCreateUser` is enabled; token login requires an existing account. These handler behaviors do not establish that a particular Proton client sends a compatible request. Do not share credentials, tokens, or request bodies when diagnosing.
 
-The existing [Windows launch investigation](docs/local-client-launch.md) records the socket redirection and port mapping used for the verified Windows lobby. A fresh Proton run is needed to determine its routing, TLS trust, request format, and game-connection requirements.
+The Windows client reached the lobby using a runtime hook for SDK DNS and the game socket. The Steam Deck VPS setup uses a separate Linux game-socket redirect; other client builds may use a different game address.
 
-## Steam Deck or CachyOS client setup for the VPS
+## Steam Deck or CachyOS client setup
 
-The VPS exposes the MikuSB SDK and game ports directly to the internet; its SOCKS proxy remains loopback-only. After downloading Snowbreak, download the setup script on the client device and run it:
+Run MikuSB on this device or another machine, then download the setup script on the client:
 
 ```bash
 mkdir -p ~/.local/share/mikusb-vps
 curl -fsSL https://raw.githubusercontent.com/SalmanTKhan/MikuSB/dev/tools/client/setup-cachyos.sh \
   -o ~/.local/share/mikusb-vps/setup-cachyos.sh
-chmod 700 ~/.local/share/mikusb-vps/setup-cachyos.sh
-bash ~/.local/share/mikusb-vps/setup-cachyos.sh
 ```
 
-The script embeds the VPS's public wildcard trust certificate, adds it to the system trust store, maps `xgsdk.xoyo.games` to the VPS address in `/etc/hosts`, and checks SDK TLS with curl. It also uses `nft` to redirect the current user's TCP connections from `49.51.66.126:5200` to the VPS on port `5200`. This is the game address observed with Windows client version 3.6.0.186; the redirect still needs a live Steam Deck or CachyOS client check. The script does not connect to the VPS over SSH and needs no Steam launch option. Use `MIKUSB_VPS_HOST=laima.ddns.net bash ~/.local/share/mikusb-vps/setup-cachyos.sh` to resolve the DDNS A record instead of the default `192.227.172.144`.
+The default server is `127.0.0.1`, with game TCP port `21000` and SDK HTTPS port `13443`. Supply the server's **public** `wildcard.xoyo.games.pem` certificate. For a server on the same device, the script also looks for it in `sdk-certs/` and `MikuSB/bin/Debug/net10.0/sdk-certs/` relative to the current directory.
 
-Editing `/etc/hosts` and installing a trusted certificate require administrator access. On SteamOS, the script temporarily disables the read-only root filesystem and reenables it when it exits. It will ask for the Deck's sudo password; set one through the Steam Devkit Management Tool first if none is configured. On CachyOS it uses the normal sudo prompt.
+```bash
+bash ~/.local/share/mikusb-vps/setup-cachyos.sh --cert /path/to/wildcard.xoyo.games.pem
+```
 
-The game redirect is restored at boot on systemd systems. On other systems, rerun the script after reboot. If the VPS address changes, rerun it to refresh both the hostname and game redirect. To remove only the game redirect and its service, run:
+For a server on your LAN or on the internet, choose its IP address or DNS name and its configured game port:
+
+```bash
+bash ~/.local/share/mikusb-vps/setup-cachyos.sh \
+  --host server.example.com --game-port 21000 --cert /path/to/server-public.pem
+```
+
+For remote clients, configure the server's `HttpServer.BindAddress` and `GameServer.BindAddress` to accept connections on the appropriate interface, set their `PublicAddress` values to its reachable address, and allow the required TCP ports through the server firewall. The server's local overrides belong in the Git-ignored `Config/Config.local.json`.
+
+Alternatively, obtain the certificate's SHA-256 fingerprint from the server administrator through a trusted channel. The client can fetch the certificate directly from the SDK TLS endpoint and check that fingerprint before trusting it:
+
+```bash
+bash ~/.local/share/mikusb-vps/setup-cachyos.sh \
+  --host server.example.com --game-port 21000 \
+  --fetch-cert --fingerprint 'SERVER_CERTIFICATE_SHA256_FINGERPRINT'
+```
+
+On the server, print the public certificate fingerprint with `openssl x509 -in /path/to/wildcard.xoyo.games.pem -noout -fingerprint -sha256`. The client does not need SSH access. Use the public PEM; keep PFX files and private keys on the server. Setup verifies the certificate and SDK connection before changing the trust store or routing. `--sdk-port` changes the probe port if the server uses another HTTPS port; the game also needs its SDK TLS ports to be reachable.
+
+The script maps `xgsdk.xoyo.games` to the selected server in `/etc/hosts` and installs a public trust anchor. It uses `nft` to redirect the current user's TCP connections from `49.51.66.126:5200` to the selected game server and port. This game address was observed with client 3.6.0.186; override it with `MIKUSB_GAME_TARGET_IP` if your build uses another IPv4 address. The redirect is restored at boot on systemd systems. On other systems, rerun setup after reboot. DNS names are resolved when setup runs; rerun it if the server address changes. The host mapping and trust anchor apply system-wide, so one MikuSB server is configured at a time.
+
+Editing `/etc/hosts`, installing the certificate, and setting up the route require sudo. On SteamOS, the script temporarily disables the read-only root filesystem and restores it afterward. Start Snowbreak normally from Steam after setup. The game redirect was confirmed on a Steam Deck against a remote VPS; local and other network configurations still need live client validation. IPv4 and an existing network route for the original game address are required.
+
+To remove only the game redirect and its service:
 
 ```bash
 bash ~/.local/share/mikusb-vps/setup-cachyos.sh --remove-game-route
 ```
 
-If a different client build uses another game address, set `MIKUSB_GAME_TARGET_IP` to the observed IPv4 address when rerunning setup. For the Deck-to-VPS setup, allow inbound TCP 5200 for gameplay and 21500, 13443, 18443, and 31443 for SDK HTTPS. Do not expose SOCKS5 port 18888. To remove the SDK setup as well, remove the line tagged `MikuSB VPS SDK routing` from `/etc/hosts`, remove `/etc/ca-certificates/trust-source/anchors/mikusb-vps.crt`, and run `sudo update-ca-trust extract`. Successful SDK curl verifies network and certificate routing; gameplay still needs testing in Snowbreak.
+To remove the SDK setup as well, remove the line tagged `MikuSB VPS SDK routing` from `/etc/hosts`, remove `/etc/ca-certificates/trust-source/anchors/mikusb-vps.crt`, and run `sudo update-ca-trust extract`. Expose only the ports needed by your clients; the SOCKS5 proxy on `18888` should remain private.
