@@ -70,12 +70,22 @@ public class RouteController : ControllerBase
 
             var json = Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
             using var document = JsonDocument.Parse(json);
-            return document.RootElement.TryGetProperty("uid", out var uid) ? uid.GetString() : null;
+            return document.RootElement.TryGetProperty("uid", out var uid) ? JsonValueToString(uid) : null;
         }
         catch
         {
             return null;
         }
+    }
+
+    private static string? JsonValueToString(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            _ => null
+        };
     }
 
     [HttpGet("/getGameConfig")]
@@ -191,7 +201,7 @@ public class RouteController : ControllerBase
                 return null;
 
             return document.RootElement.TryGetProperty(propertyName, out var value)
-                ? value.GetString()
+                ? JsonValueToString(value)
                 : null;
         }
         catch
