@@ -31,7 +31,21 @@ public static class CertHelper
         var pfxPath = basePath + ".pfx";
         X509Certificate2 certificate;
         if (File.Exists(pfxPath))
+        {
             certificate = LoadPkcs12(File.ReadAllBytes(pfxPath));
+            if (!certificate.Extensions
+                    .OfType<X509BasicConstraintsExtension>()
+                    .Any(extension => extension.CertificateAuthority))
+            {
+                // Older MikuSB releases made a self-signed server certificate
+                // without CA constraints. Replace it so Linux trust tools can
+                // include the certificate in their generated CA bundle.
+                certificate.Dispose();
+                using var generated = CreateSelfSigned(subjectHost);
+                File.WriteAllBytes(pfxPath, generated.Export(X509ContentType.Pfx, Password));
+                certificate = LoadPkcs12(File.ReadAllBytes(pfxPath));
+            }
+        }
         else
         {
             using var generated = CreateSelfSigned(subjectHost);
@@ -69,9 +83,21 @@ public static class CertHelper
         san.AddDnsName(host);
         req.CertificateExtensions.Add(san.Build());
 
+        // These self-signed certificates are installed as trust anchors by Linux
+        // clients. Mark them as CAs so p11-kit includes them in the generated
+        // system CA bundle used by OpenSSL-based clients such as curl.
+        req.CertificateExtensions.Add(new X509BasicConstraintsExtension(
+            certificateAuthority: true,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true));
+
         req.CertificateExtensions.Add(new X509KeyUsageExtension(
-            X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DigitalSignature,
-            critical: false));
+            X509KeyUsageFlags.KeyEncipherment |
+            X509KeyUsageFlags.DigitalSignature |
+            X509KeyUsageFlags.KeyCertSign |
+            X509KeyUsageFlags.CrlSign,
+            critical: true));
 
         req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
             new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") },
