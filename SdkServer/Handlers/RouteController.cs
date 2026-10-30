@@ -130,7 +130,17 @@ public class RouteController : ControllerBase
 
     private static AccountData? ResolveAccountByUid(string? uid)
     {
-        if (int.TryParse(uid, out var parsedUid))
+        if (string.IsNullOrWhiteSpace(uid))
+            return null;
+
+        // The account query and game-account endpoints expose this namespaced
+        // UID, which the client may send back during its follow-up login.
+        const string seasunPrefix = "seasun__";
+        var normalizedUid = uid.Trim();
+        if (normalizedUid.StartsWith(seasunPrefix, StringComparison.OrdinalIgnoreCase))
+            normalizedUid = normalizedUid[seasunPrefix.Length..];
+
+        if (int.TryParse(normalizedUid, out var parsedUid))
             return AccountData.GetAccountByUid(parsedUid);
 
         return null;
@@ -474,3 +484,4 @@ public class RouteController : ControllerBase
         return Ok(rsp);
     }
 }
+
