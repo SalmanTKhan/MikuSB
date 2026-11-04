@@ -119,7 +119,7 @@ try {
     }
     foreach (var (d,p,l,exp) in new[] {(1u,1u,3u,1000u),(2u,1u,2u,500u),(9u,9u,9u,(uint)int.MaxValue)}) {
         var supplies = new SuppliesExcel { Genre=5, Detail=d, Particular=p, Level=l, ProvideExpRaw=new JValue(exp), ConsumeGoldRaw=new JValue(10) };
-        GameData.SuppliesData[supplies.GetId()] = supplies;
+        GameData.SuppliesData[supplies.TemplateId] = supplies;
     }
     for (var lv = 1; lv < 80; lv++) GameData.UpgradeExpData[lv] = new UpgradeExpExcel { Lv=lv, CardNeedExpRaw=new JValue(100) };
     JsonArray Settle(CallGSResult r) => JsonNode.Parse(r.Argument)!["tbParam"] as JsonArray ?? throw new Exception("Settlement error " + r.Argument);
@@ -157,7 +157,7 @@ try {
     var silverBefore = player.Attributes.GetValue(1,7);
     var countA = stackA.ItemCount;
     Check(Error(await Existing<GirlCard_UpdateLevel>($$"""{"Id":25,"tbMaterials":[{"Num":{{countA+1}},"Id":{{stackA.UniqueId}}}]}""")), "Insufficient material accepted");
-    var huge = player.InventoryManager.AddSuppliesItem(GameData.SuppliesData[(uint)GameResourceTemplateId.FromGdpl(5,9,9,9)], 2, false).Result!;
+    var huge = player.InventoryManager.AddSuppliesItem(GameData.SuppliesData[GameResourceTemplateId.FromGdpl(5,9,9,9)], 2, false).Result!;
     Check(Error(await Existing<GirlCard_UpdateLevel>($$"""{"Id":25,"tbMaterials":[{"Num":2,"Id":{{huge.UniqueId}}}]}""")), "Exp overflow accepted");
     Check(huge.ItemCount==2 && stackA.ItemCount==countA && card.Level==1 && player.Attributes.GetValue(1,7)==silverBefore, "Rejected upgrade mutated state");
     var upgrade = await Existing<GirlCard_UpdateLevel>($$"""{"Id":25,"tbMaterials":[{"Num":2,"Id":{{stackA.UniqueId}}},{"Num":1,"Id":{{stackB.UniqueId}}}]}""");

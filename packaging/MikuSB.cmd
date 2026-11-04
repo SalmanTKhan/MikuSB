@@ -27,7 +27,7 @@ goto :hold
 :framework
 echo [MikuSB] The .NET 10 runtime this build needs is missing or incomplete on this machine.
 echo [MikuSB] Unpack the self-contained release again (MikuSB-win-x64.zip, ~84 MB):
-echo [MikuSB]   https://github.com/dubstream3/MikuSB/releases/latest
+echo [MikuSB]   https://github.com/SalmanTKhan/MikuSB/releases/latest
 echo [MikuSB] Or install the runtime and keep this build:
 echo [MikuSB]   https://aka.ms/dotnet-core-applaunch?framework=Microsoft.AspNetCore.App^&framework_version=10.0.0^&arch=x64^&rid=win-x64
 goto :hold

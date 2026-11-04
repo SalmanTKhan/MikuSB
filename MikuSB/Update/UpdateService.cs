@@ -381,7 +381,10 @@ public static class UpdateService
         if (!RequiredResourceFiles.All(fileName => File.Exists(Path.Combine(resourcePath, fileName))))
             return false;
 
-        return ReadInstalledResourceVersion(resourcePath) == ResourceDataVersion;
+        // Only a tree this updater installed carries the marker. Anything else is a hand-managed resource
+        // checkout (Path.ResourcePath) and must never be replaced, because a mismatch deletes the tree.
+        var installed = ReadInstalledResourceVersion(resourcePath);
+        return installed == null || installed == ResourceDataVersion;
     }
 
     private static string? ReadInstalledResourceVersion(string resourcePath)

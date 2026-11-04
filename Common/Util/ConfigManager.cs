@@ -27,6 +27,13 @@ public static class ConfigManager
 
     public static void SaveConfig()
     {
+        // Config holds the merged local overrides here, and those must never reach the tracked Config.json.
+        if (File.Exists(LocalConfigFilePath))
+        {
+            Logger.Warn($"Not saving {ConfigFilePath}: {LocalConfigFilePath} is in use, so change settings there.");
+            return;
+        }
+
         SaveData(Config, ConfigFilePath);
     }
 

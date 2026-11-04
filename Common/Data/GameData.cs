@@ -143,8 +143,6 @@ public static class GameData
     public static Dictionary<uint, SeasonBossLevelExcel> SeasonBossLevelData { get; private set; } = [];
     public static Dictionary<uint, ActivityQuestExcel> ActivityQuestData { get; private set; } = [];
 
-    /// <summary>achievement/achievement.json keyed by ID (attribute group AttrIds.Achievement.GroupId).</summary>
-    public static Dictionary<uint, AchievementExcel> AchievementData { get; private set; } = [];
 
     /// <summary>house/coinpusher/coinpusher_achv.json keyed by ID (the arcade task panel's list).</summary>
     public static Dictionary<uint, CoinPusherAchvExcel> CoinPusherAchvData { get; private set; } = [];

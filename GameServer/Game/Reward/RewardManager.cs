@@ -131,7 +131,7 @@ public sealed class RewardManager(PlayerInstance player) : BasePlayerManager(pla
             var templateId = GameResourceTemplateId.FromGdpl(row[0], row[1], row[2], row[3]);
             switch ((ItemTypeEnum)row[0])
             {
-                case ItemTypeEnum.TYPE_SUPPLIES when !GameData.SuppliesData.ContainsKey((uint)templateId):
+                case ItemTypeEnum.TYPE_SUPPLIES when !GameData.SuppliesData.ContainsKey(templateId):
                 case ItemTypeEnum.TYPE_USEABLE when !GameData.OtherItemData.ContainsKey(templateId):
                     reason = $"missing item template {string.Join(',', row.Take(4))}";
                     return false;
