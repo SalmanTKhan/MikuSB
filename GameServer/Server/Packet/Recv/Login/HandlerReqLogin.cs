@@ -71,6 +71,13 @@ public class HandlerReqLogin : Handler
             prev.Stop();
         }
 
+        await EnterAsync(connection, account.Uid, null);
+    }
+
+    /// <summary>Puts the player on a connection: a new login (RspLogin) or, with a session id, ReqReconnect (RspReconnect). Both restore any open level session.</summary>
+    public static async Task EnterAsync(Connection connection, int uid, string? reconnectSession)
+    {
+        var account = AccountData.GetAccountByUid(uid)!;
         connection.State = SessionStateEnum.WAITING_FOR_LOGIN;
         var pd = DatabaseHelper.GetInstance<PlayerGameData>(account.Uid);
         if (pd != null)
@@ -84,7 +91,21 @@ public class HandlerReqLogin : Handler
         await connection.Player.OnEnterGame();
         connection.Player.Connection = connection;
         var splitSupportCards = connection.Player.InventoryManager.InventoryData.SupportCards.Count > SupportCardLoginSplitThreshold;
-        await connection.SendPacket(new PacketRspLogin(connection.Player!, !splitSupportCards));
+        string session = reconnectSession ?? Sessions.Issue(account.Uid);
+        if (reconnectSession != null)
+        {
+            await connection.SendPacket(CmdIds.RspReconnect, new RspReconnect
+            {
+                SessionId = session,
+                Data = connection.Player.ToPlayerProto(!splitSupportCards),
+                Timestamp = (uint)MikuSB.Util.Extensions.Extensions.GetUnixSec(),
+                WorldChannel = 1,
+            });
+        }
+        else await connection.SendPacket(new PacketRspLogin(connection.Player!, !splitSupportCards, session));
+        // The mail contents: the snapshot's mail_box holds only their state.
+        foreach (var mail in connection.Player.MailManager.Data.Mails)
+            await connection.SendPacket(CmdIds.NtfSyncNewMail, MikuSB.GameServer.Game.Mail.MailManager.ToProto(mail));
         if (splitSupportCards)
             await SendSupportCardsOnLogin(connection);
         await connection.SendPacket(new PacketNtfCallScript(connection.Player!));

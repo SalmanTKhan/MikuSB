@@ -12,30 +12,15 @@ public class BattlePassLogic_ClientRefresh : CallGSHandler
 {
     private const uint GroupId = AttrIds.BattlePass.Gid;
     private const uint CurIdSid = AttrIds.BattlePass.CurrentIdSid;
+    // The original server answered every refresh in the 2026-10-25 capture with an empty list (7 of 7);
+    // the current battle pass reaches the client through the attribute sync only.
+    private const string RetailResponse = "[]";
 
     protected override Task<CallGSResult> HandleAsync(CallGSContext context, string param)
     {
-        var now = DateTime.Now;
-        var battlePass = ResolveCurrent(GameData.BattlePassTimeData.Values, now);
-        var player = context.Connection.Player!;
         var sync = new NtfSyncPlayer();
-
-        if (battlePass == null)
-        {
-            SetAttr(player, CurIdSid, 0, sync);
-            return Task.FromResult(CallGSResult.Ok("{}", sync));
-        }
-
-        SetAttr(player, CurIdSid, battlePass.Id, sync);
-
-        var response = new JsonObject
-        {
-            ["nId"] = battlePass.Id,
-            ["nStartTime"] = ToUnixSeconds(ParseConfigTime(battlePass.StartTime)),
-            ["nEndTime"] = ToUnixSeconds(ParseConfigTime(battlePass.EndTime))
-        };
-
-        return Task.FromResult(CallGSResult.Ok(response.ToJsonString(), sync));
+        MikuSB.GameServer.Game.BattlePass.BattlePassService.Refresh(context.Connection.Player!, sync);
+        return Task.FromResult(CallGSResult.Ok(RetailResponse, sync));
     }
 
     private static BattlePassTimeExcel? ResolveCurrent(IEnumerable<BattlePassTimeExcel> configs, DateTime now)

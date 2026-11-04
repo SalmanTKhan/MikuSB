@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MikuSB.Database;
 using MikuSB.Database.Player;
+using MikuSB.GameServer.Game.Shop;
+using MikuSB.Proto;
 using MikuSB.Util;
 
 namespace MikuSB.GameServer.Server.CallGS.Handlers.Shop;
@@ -19,17 +21,23 @@ public class ShopLogic_GetGoodsList : CallGSHandler<ShopGetGoodsListParam>
         if (req == null || req.ShopId == 0)
             return Task.FromResult(CallGSResult.Error("error.BadParam"));
 
-        var state = DatabaseHelper.GetInstanceOrCreateNew<PreservationProgressData>(context.Player.Uid);
-        var ids = ResolveGoods(req.ShopId, state, DateTimeOffset.UtcNow, out var changed);
-        if (changed)
-            DatabaseHelper.SaveDatabaseType(state);
+        // The same list goes into the shop's string attribute: Shop.lua sells only goods its attribute lists.
+        var sync = new NtfSyncPlayer();
+        var ids = ShopService.SyncShop(context.Player, req.ShopId, DateTimeOffset.UtcNow, sync);
+        DatabaseHelper.SaveDatabaseType(context.Player.Data);
 
         var goodsList = new JsonArray();
         foreach (var id in ids)
             goodsList.Add(new JsonObject { ["goodsid"] = id, ["discountindex"] = 0 });
         var response = new JsonObject { ["shopId"] = req.ShopId, ["goodsList"] = goodsList };
-        return Task.FromResult(CallGSResult.Ok(response.ToJsonString()));
+        return Task.FromResult(CallGSResult.Ok(response.ToJsonString(), sync));
     }
+
+    /// <summary>Whether a shop holds unslotted goods, so its list is rolled.</summary>
+    public static bool Rolled(uint shopId) => ShopConfig.GoodsRows(shopId).Any(row => ShopConfig.PosIndex(row) == null);
+
+    /// <summary>Drops the saved roll so the next read rolls anew (a manual refresh).</summary>
+    public static void ForgetRoll(uint shopId, PreservationProgressData state) => state.Values.Remove($"shop:{shopId}");
 
     public static List<uint> ResolveGoods(uint shopId, PreservationProgressData state, DateTimeOffset now, out bool changed)
     {
@@ -102,6 +110,9 @@ public class ShopLogic_GetGoodsList : CallGSHandler<ShopGetGoodsListParam>
 public static class ShopConfig
 {
     public static IReadOnlyList<JsonNode> TabRows() => Optional("shop/shop_tab.json");
+
+    public static JsonNode? GoodsRow(uint goodsId) =>
+        Optional("shop/goods.json").Concat(Optional("dlc/dlc_goods.json")).FirstOrDefault(r => CapturedGameplay.UInt(r, "GoodsId") == goodsId);
 
     public static IReadOnlyList<JsonNode> DlcShopRows() => Optional("dlc/dlc_shop.json");
 

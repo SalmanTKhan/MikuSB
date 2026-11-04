@@ -5,6 +5,12 @@ namespace MikuSB.Data;
 public static class GameData
 {
     public static Dictionary<uint, CardExcel> CardData { get; private set; } = [];
+    public static Dictionary<uint, AchievementExcel> AchievementData { get; private set; } = [];
+    public static Dictionary<uint, BossStageExcel> BossStageData { get; private set; } = [];
+    public static Dictionary<uint, BossPeriodExcel> BossPeriodData { get; private set; } = [];
+    public static Dictionary<uint, BossEntryExcel> BossEntryData { get; private set; } = [];
+    public static Dictionary<uint, BossAwardExcel> BossAwardData { get; private set; } = [];
+    public static List<AchievementPointRewardExcel> AchievementPointRewardData { get; private set; } = [];
     public static Dictionary<uint, WeaponExcel> WeaponData { get; private set; } = [];
     public static Dictionary<uint, CardSkinExcel> CardSkinData { get; private set; } = [];
     public static Dictionary<uint, SuppliesExcel> SuppliesData { get; private set; } = [];

@@ -1,0 +1,52 @@
+--- a/src/dllmain.cpp
++++ b/src/dllmain.cpp
+@@ -6,6 +6,7 @@
+ 
+ #pragma comment(lib, "Psapi.lib")
+ #include <cstdio>
++#include <share.h>
+ #include <cstring>
+ #include <cstdint>
+ #include "MinHook.h"
+@@ -76,6 +77,13 @@
+ 
+     const sockaddr_in* addr = reinterpret_cast<const sockaddr_in*>(name);
+     const int port = ntohs(addr->sin_port);
++    // This host reserves 18443. SDK DNS is already redirected to loopback.
++    if (addr->sin_addr.s_addr == inet_addr("127.0.0.1") && port == 18443)
++    {
++        patched = *addr;
++        patched.sin_port = htons(21500);
++        return true;
++    }
+     if (port != 5200)
+         return false;
+ 
+@@ -94,7 +102,7 @@
+             inet_ntoa(reinterpret_cast<const sockaddr_in*>(name)->sin_addr),
+             ntohs(reinterpret_cast<const sockaddr_in*>(name)->sin_port),
+             GAMESERVER_IP,
+-            GAMESERVER_PORT);
++            ntohs(patched.sin_port));
+         return g_orig_connect(s, reinterpret_cast<const sockaddr*>(&patched), sizeof(patched));
+     }
+ 
+@@ -110,7 +118,7 @@
+             inet_ntoa(reinterpret_cast<const sockaddr_in*>(name)->sin_addr),
+             ntohs(reinterpret_cast<const sockaddr_in*>(name)->sin_port),
+             GAMESERVER_IP,
+-            GAMESERVER_PORT);
++            ntohs(patched.sin_port));
+         return g_orig_wsaconnect(s, reinterpret_cast<const sockaddr*>(&patched), sizeof(patched), callerData, calleeData, sqos, gqos);
+     }
+ 
+@@ -606,7 +614,8 @@
+     GetModuleFileNameA(g_hModule, dllPath, MAX_PATH);
+     char* lastSlash = strrchr(dllPath, '\\');
+     if (lastSlash) strcpy_s(lastSlash + 1, MAX_PATH - (lastSlash - dllPath + 1), "Patch.log");
+-    fopen_s(&g_log, dllPath, "w");
++    g_log = _fsopen(dllPath, "w", _SH_DENYNO);
++    LOG("Installing local redirect runtime. SDK loopback 18443 -> 21500.\n");
+ 
+     HMODULE ws2 = GetModuleHandleA("ws2_32.dll");
+     if (!ws2) ws2 = LoadLibraryA("ws2_32.dll");

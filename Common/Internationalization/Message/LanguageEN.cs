@@ -1,4 +1,4 @@
-﻿namespace MikuSB.Internationalization.Message;
+namespace MikuSB.Internationalization.Message;
 
 #region Root
 
@@ -191,6 +191,7 @@ public class AccountTextEN
     public string Usage =>
         "Usage: /account create <email> <uid>\n" +
         "Usage: /account delete <email|uid>\n" +
+        "Usage: /account perm <email|uid> <grant|revoke> <Trial|Support|Admin|Other>\n" +
         "Usage: /account list";
     public string Created => "Created account mapping: {0} -> UID {1}";
     public string CreateFailed => "Failed to create account mapping: {0}";

@@ -42,7 +42,10 @@ public class PlayerInstance(PlayerGameData data)
     public InventoryManager InventoryManager { get; set; } = null!;
     public LineupManager LineupManager { get; set; } = null!;
     public QuestManager QuestManager { get; set; } = null!;
+    public AchievementManager AchievementManager { get; set; } = null!;
+    public MikuSB.GameServer.Game.Boss.BossManager BossManager { get; set; } = null!;
     public RewardManager RewardManager { get; set; } = null!;
+    public MikuSB.GameServer.Game.Mail.MailManager MailManager { get; set; } = null!;
     public RikiManager RikiManager { get; set; } = null!;
     public Rogue3DManager Rogue3DManager { get; set; } = null!;
 
@@ -107,7 +110,10 @@ public class PlayerInstance(PlayerGameData data)
         LineupManager = new LineupManager(this);
         CharacterManager = new CharacterManager(this);
         QuestManager = new QuestManager(this);
+        AchievementManager = new AchievementManager(this);
+        BossManager = new MikuSB.GameServer.Game.Boss.BossManager(this);
         RewardManager = new RewardManager(this);
+        MailManager = new MikuSB.GameServer.Game.Mail.MailManager(this);
         RikiManager = new RikiManager(this);
         Rogue3DManager = new Rogue3DManager(this);
 
@@ -128,6 +134,10 @@ public class PlayerInstance(PlayerGameData data)
         Data.EnsureDisplayName();
         await CharacterManager.RepairCharacterWeapons();
         await EnsureSupplies();
+        MikuSB.GameServer.Game.Shop.ShopService.SyncOpenShops(this, DateTimeOffset.UtcNow);
+        MikuSB.GameServer.Game.BattlePass.BattlePassService.Refresh(this, new NtfSyncPlayer());
+        RestoreLevelSession();
+        await MailManager.OnEnterGame();
     }
 
     public IEnumerable<BaseGameItemInfo> GetSupplyItems() =>
@@ -262,6 +272,9 @@ public class PlayerInstance(PlayerGameData data)
 
         proto.ShowItems.AddRange(Data.ShowItems);
 
+        foreach (var mail in MailManager.Data.Mails)
+            proto.MailBox[mail.Mid] = MikuSB.GameServer.Game.Mail.MailManager.ToBox(mail);
+
         return proto;
     }
 
@@ -307,6 +320,42 @@ public class PlayerInstance(PlayerGameData data)
         ActiveLevelId = levelId;
         ActiveLevelSeed = seed;
         ActiveLevelTeamId = teamId;
+        SaveLevelSession();
+    }
+
+    /// <summary>A failed or abandoned level closes its session; its seed can no longer settle.</summary>
+    public void EndLevelSession()
+    {
+        ActiveLevelType = default;
+        ActiveLevelId = 0;
+        ActiveLevelSeed = 0;
+        ActiveLevelTeamId = 0;
+        SaveLevelSession();
+    }
+
+    private const string LevelSessionKey = "level-session";
+
+    // The open level session is stored with the player, so a run survives a lost connection (or a server restart): whichever way the
+    // player comes back, ReqReconnect or a new login, its settlement still finds the seed. The seed attribute keeps a retry from granting twice.
+    private void SaveLevelSession()
+    {
+        var state = DatabaseHelper.GetInstanceOrCreateNew<PreservationProgressData>(Data.Uid);
+        if (ActiveLevelSeed == 0) state.Values.Remove(LevelSessionKey);
+        else state.Values[LevelSessionKey] = $"{(int)ActiveLevelType}|{ActiveLevelId}|{ActiveLevelSeed}|{ActiveLevelTeamId}";
+        DatabaseHelper.SaveDatabaseType(state);
+    }
+
+    private void RestoreLevelSession()
+    {
+        var state = DatabaseHelper.GetInstanceOrCreateNew<PreservationProgressData>(Data.Uid);
+        if (state.Values.TryGetValue(LevelSessionKey, out var saved) && saved.Split('|') is [var type, var level, var seed, var team] &&
+            int.TryParse(type, out var t) && uint.TryParse(level, out var l) && uint.TryParse(seed, out var s) && uint.TryParse(team, out var m))
+        {
+            ActiveLevelType = (QuestLevelType)t;
+            ActiveLevelId = l;
+            ActiveLevelSeed = s;
+            ActiveLevelTeamId = m;
+        }
     }
 
     public bool IsActiveChapterLevel(uint levelId) =>
@@ -374,6 +423,7 @@ public class PlayerInstance(PlayerGameData data)
         QuestManager.MigrateChapterStarAwardMasks();
         QuestManager.RemoveLegacyLevelUnlocks();
         RikiManager.EnsureOwnedItemsUnlocked();
+        AchievementManager.Refresh(new NtfSyncPlayer());
 
         var bootstrapAttrs = BuildLobbyBootstrapAttrs().ToList();
         if (additional) bootstrapAttrs.AddRange(BuildGirlFurnitureAttrs());

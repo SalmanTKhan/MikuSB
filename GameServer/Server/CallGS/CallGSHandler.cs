@@ -42,7 +42,8 @@ public abstract class CallGSHandler : ICallGSHandler
         if (!result.SendResponse)
             return Task.CompletedTask;
 
-        return CallGSRouter.SendScript(connection, result.Api ?? Api, result.Argument, result.Sync!);
+        var sync = connection.Player?.AchievementManager?.AfterCall(Api, result.Sync) ?? result.Sync;
+        return CallGSRouter.SendScript(connection, result.Api ?? Api, result.Argument, sync!);
     }
 }
 

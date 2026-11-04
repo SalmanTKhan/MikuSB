@@ -113,8 +113,7 @@ public sealed class ProxyServer(
                 await upstream.ConnectAsync(destination.Host, destination.Port, cancellationToken);
                 await SendConnectReplyAsync(clientStream, success: true, cancellationToken);
 
-                if (ConfigManager.Config.HttpServer.EnableLog)
-                    logger.Info($"SOCKS: {request.Host}:{request.Port} -> {destination.Host}:{destination.Port}");
+                logger.Info($"SOCKS: {request.Host}:{request.Port} -> {destination.Host}:{destination.Port}");
 
                 using var upstreamStream = upstream.GetStream();
                 await TunnelAsync(clientStream, upstreamStream, cancellationToken);

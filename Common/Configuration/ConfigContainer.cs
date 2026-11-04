@@ -1,4 +1,4 @@
-﻿using MikuSB.Proto;
+using MikuSB.Proto;
 
 namespace MikuSB.Configuration;
 
@@ -61,9 +61,11 @@ public class ServerOption
 {
     public string Language { get; set; } = "EN";
     public string FallbackLanguage { get; set; } = "EN";
-    public string[] DefaultPermissions { get; set; } = ["Admin"];
+    public string[] DefaultPermissions { get; set; } = [];
     public ServerProfile ServerProfile { get; set; } = new();
     public bool EnableGmMenu { get; set; } = false;
+    // Treats every level as cleared for all accounts without saving progress, like /quest complete_all on.
+    public bool UnlockAllLevels { get; set; } = false;
     public bool AutoCreateUser { get; set; } = true;
     public bool SavePersonalDebugFile { get; set; } = false;
     public bool AutoSendResponseWhenNoHandler { get; set; } = true;

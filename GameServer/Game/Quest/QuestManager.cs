@@ -33,7 +33,8 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
     private const uint LegacyUnlockedLevelPassTime = 1_700_000_000;
     private static readonly Logger Logger = new("Quest");
     private readonly SemaphoreSlim settlementLock = new(1, 1);
-    private bool allLevelsCompletedForTesting = player.Data.CompleteAllQuestLevels;
+    private bool allLevelsCompletedForTesting =
+        player.Data.CompleteAllQuestLevels || ConfigManager.Config.ServerOption.UnlockAllLevels;
 
     public void RemoveLegacyLevelUnlocks()
     {

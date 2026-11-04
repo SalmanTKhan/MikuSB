@@ -10,7 +10,7 @@ public class PacketRspLogin : BasePacket
 {
     private static readonly Logger Logger = new("RspLogin");
 
-    public PacketRspLogin(PlayerInstance player, bool includeSupportCards = true) : base(CmdIds.RspLogin)
+    public PacketRspLogin(PlayerInstance player, bool includeSupportCards = true, string? sessionId = null) : base(CmdIds.RspLogin)
     {
         var characterCount = player.CharacterManager.CharacterData.Characters.Count;
         var itemCount = player.InventoryManager.InventoryData.Items.Count;
@@ -27,7 +27,8 @@ public class PacketRspLogin : BasePacket
             WorldChannel = 1,
             AreaId = 1,
             Data = player.ToPlayerProto(includeSupportCards),
-            NeedRename = false
+            NeedRename = false,
+            SessionId = sessionId ?? ""
         };
 
         var bytes = Google.Protobuf.MessageExtensions.ToByteArray(proto);

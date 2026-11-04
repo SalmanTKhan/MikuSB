@@ -1,4 +1,4 @@
-﻿using MikuSB.Database.Account;
+using MikuSB.Database.Account;
 using MikuSB.Enums.Player;
 using MikuSB.GameServer.Server;
 using MikuSB.Internationalization;
@@ -60,6 +60,14 @@ public class CommandManager
                         break;
                 }
             }
+            // Console has no player of its own: default to the only online player when no @uid is given.
+            if (target == (int)ServerEnum.Console)
+            {
+                var online = Listener.GetOnlinePlayers();
+                if (online.Count == 1)
+                    target = online[0].Player!.Uid;
+            }
+
             argInfo.TargetUid = target;
             if (SocketListener.Connections.Values.ToList().Find(item =>
                 (item as Connection)?.Player?.Uid == target) is Connection con)

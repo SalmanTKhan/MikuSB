@@ -74,6 +74,36 @@ public class CommandAccount : ICommands
         }
     }
 
+    [CommandMethod("perm")]
+    public async ValueTask Perm(CommandArg arg)
+    {
+        if (!await arg.CheckArgCnt(3) ||
+            !Enum.TryParse<PermEnum>(arg.Args[2], true, out var perm) ||
+            arg.Args[1] is not ("grant" or "revoke"))
+        {
+            await arg.SendMsg("Usage: /account perm <email|uid> <grant|revoke> <Trial|Support|Admin|Other>");
+            return;
+        }
+
+        var identifier = arg.Args[0].Trim();
+        var account = int.TryParse(identifier, out var uid) && uid > 0
+            ? AccountData.GetAccountByUid(uid)
+            : AccountData.GetAccountByUserName(identifier);
+        if (account == null)
+        {
+            await arg.SendMsg(I18NManager.Translate("Game.Command.Account.NotFound", identifier));
+            return;
+        }
+
+        if (arg.Args[1] == "grant")
+            AccountData.AddPerm([perm], account.Uid);
+        else
+            AccountData.RemovePerm([perm], account.Uid);
+
+        var perms = account.Permissions is { Count: > 0 } list ? string.Join(", ", list) : "none";
+        await arg.SendMsg($"{account.Username} -> UID {account.Uid} permissions: {perms}");
+    }
+
     [CommandMethod("list")]
     public async ValueTask List(CommandArg arg)
     {
@@ -90,7 +120,7 @@ public class CommandAccount : ICommands
         var builder = new StringBuilder();
         builder.AppendLine("Accounts:");
         foreach (var account in accounts)
-            builder.AppendLine($"{account.Username} -> UID {account.Uid}");
+            builder.AppendLine($"{account.Username} -> UID {account.Uid}{(Listener.GetActiveConnection(account.Uid) != null ? " (online)" : "")} [{string.Join(", ", account.Permissions ?? [])}]");
 
         await arg.SendMsg(builder.ToString().TrimEnd());
     }

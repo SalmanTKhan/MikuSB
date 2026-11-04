@@ -371,3 +371,23 @@ FodyWeavers.xsd
 /Lua_Script
 /.note
 /Snowbreak_Data
+
+# Host inventory and local editing copies
+*.local.json
+tools/client/edited/
+*.local.log
+
+/Config/Database/
+
+/.local/
+
+# Local configuration, proprietary client material, captures and credentials
+/Config/Config.local.json
+/Resources/
+/MikuSB-Resource/
+*.pak
+*.pcap
+*.pcapng
+*.keylog
+proxy-certs/
+sdk-certs/

@@ -1,4 +1,4 @@
-﻿using MikuSB.Enums.Player;
+using MikuSB.Enums.Player;
 using MikuSB.Util;
 using MikuSB.Util.Extensions;
 using MikuSB.Util.Security;
@@ -70,6 +70,10 @@ public class AccountData : BaseDatabaseDataHelper
             throw new ArgumentException("Username cannot be empty.", nameof(username));
         if (GetAccountByUserName(username) != null)
             throw new InvalidOperationException($"Account '{username}' already exists.");
+        // The server profile UID is the built-in chat contact; a player sharing it would be unreachable.
+        var reservedUid = ConfigManager.Config.ServerOption.ServerProfile.Uid;
+        if (uid != 0 && uid == reservedUid)
+            throw new InvalidOperationException($"UID '{uid}' is reserved for the server profile.");
         if (uid != 0 && GetAccountByUid(uid) != null)
             throw new InvalidOperationException($"UID '{uid}' is already in use.");
 
@@ -77,7 +81,7 @@ public class AccountData : BaseDatabaseDataHelper
         if (uid == 0)
         {
             newUid = 1;
-            while (GetAccountByUid(newUid) != null) newUid++;
+            while (newUid == reservedUid || GetAccountByUid(newUid) != null) newUid++;
         }
 
         var account = new AccountData
@@ -143,6 +147,8 @@ public class AccountData : BaseDatabaseDataHelper
                 account.Permissions = [.. account.Permissions, perm];
             }
         }
+
+        DatabaseHelper.UpdateInstance(account);
     }
 
     public static void RemovePerm(PermEnum[] perms, int uid)
@@ -159,6 +165,8 @@ public class AccountData : BaseDatabaseDataHelper
                 account.Permissions = account.Permissions.Except([perm]).ToList();
             }
         }
+
+        DatabaseHelper.UpdateInstance(account);
     }
 
     public static void CleanPerm(int uid)
