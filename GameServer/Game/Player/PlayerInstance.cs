@@ -7,7 +7,9 @@ using MikuSB.Database.Inventory;
 using MikuSB.Database.Player;
 using MikuSB.Enums.Item;
 using MikuSB.GameServer.Command;
+using MikuSB.GameServer.Game.Activity;
 using MikuSB.GameServer.Game.Character;
+using MikuSB.GameServer.Game.Dlc;
 using MikuSB.GameServer.Game.Inventory;
 using MikuSB.GameServer.Game.Lineup;
 using MikuSB.GameServer.Game.Quest;
@@ -77,10 +79,7 @@ public class PlayerInstance(PlayerGameData data)
             {
                 await InventoryManager.AddManifestationItem((ItemTypeEnum)manifest.Genre, manifest.Detail, manifest.Particular, manifest.Level, false);
             }
-            foreach (var card in GameData.CardData.Values)
-            {
-                await CharacterManager.AddCharacter((ItemTypeEnum)card.Genre, card.Detail, card.Particular, card.Level, sendPacket:false);
-            }
+            await GrantStarterCharacters();
             foreach (var supplies in GameData.AllSuppliesData)
             {
                 await InventoryManager.AddSuppliesItem(supplies, 90000, false);
@@ -99,6 +98,28 @@ public class PlayerInstance(PlayerGameData data)
 
         Initialized = true;
     }
+
+    /// <summary>
+    /// The three starters every new account keeps. Handing out the whole roster here made the client
+    /// replay one "character obtained" presentation per card before the lobby became usable, so the
+    /// roster now starts small: three starters plus the characters of the pinned DLC era. Everything
+    /// else comes from the shops, /giveall and GirlCard_UnLockCharacter.
+    /// </summary>
+    private static readonly (uint Detail, uint Particular)[] StarterCards =
+    [
+        (1, 1), // 安卡希雅
+        (2, 1), // 里芙
+        (3, 1)  // 妮塔
+    ];
+
+    private async ValueTask GrantStarterCharacters()
+    {
+        foreach (var (detail, particular) in StarterCards)
+            await CharacterManager.AddCharacter(ItemTypeEnum.TYPE_CARD, detail, particular, 1, sendPacket: false);
+
+        await GachaTryService.GrantEraCharactersAsync(this, notify: false);
+    }
+
     private async ValueTask InitialPlayerManager()
     {
         Uid = Data.Uid;
@@ -128,6 +149,24 @@ public class PlayerInstance(PlayerGameData data)
         Data.EnsureDisplayName();
         await CharacterManager.RepairCharacterWeapons();
         await EnsureSupplies();
+    }
+
+    /// <summary>
+    /// Builds the per-player managers on demand.
+    /// A player restored from the database is still half-built when it reaches login: the primary
+    /// constructor sets nothing but <see cref="Data"/>, and <see cref="InitialPlayerManager"/> only
+    /// runs from the brand-new-player constructor or from <see cref="OnEnterGame"/>. Any login-time
+    /// work that happens *before* OnEnterGame therefore has to ask for the managers explicitly -
+    /// reaching into QuestManager too early threw NullReferenceException at HandlerReqLogin.cs:129 and
+    /// left the client stuck on its permission check. Setting <see cref="Initialized"/> also keeps the
+    /// later OnEnterGame from tearing the managers down and rebuilding them right after seeding has
+    /// written through them.
+    /// </summary>
+    public async ValueTask EnsureManagersReady()
+    {
+        if (Initialized) return;
+        await InitialPlayerManager();
+        Initialized = true;
     }
 
     public IEnumerable<BaseGameItemInfo> GetSupplyItems() =>
@@ -231,6 +270,7 @@ public class PlayerInstance(PlayerGameData data)
             Exp = (uint)Math.Max(0, Data.Exp),
             Sex = Data.Gender,
             Vigor = Data.Vigor,
+            LastVigorTime = Data.LastVigorTime,
             Solutions = { LineupManager.LineupData.LineupInfo.Values.Select(x => x.ToProto()) },
             Badges = { InventoryManager.InventoryData.Items.Values.Where(x => x.ItemType == ItemTypeEnum.TYPE_BADGE).Select(x => (ulong)x.UniqueId) }
         };
@@ -332,15 +372,21 @@ public class PlayerInstance(PlayerGameData data)
         return leveledUp;
     }
 
-    public void AddCurrency(uint moneyType, uint amount, NtfSyncPlayer sync)
+    /// <summary>
+    /// Credits a currency. <paramref name="allowVigorOverflow"/> only matters for
+    /// <see cref="AttrIds.Currency.Vigor"/> and is used by the 数据金 exchange, where the retail
+    /// server lets bought stamina pass the level cap.
+    /// </summary>
+    public void AddCurrency(uint moneyType, uint amount, NtfSyncPlayer sync, bool allowVigorOverflow = false)
     {
         if (amount == 0)
             return;
 
         if (moneyType == AttrIds.Currency.Vigor)
         {
-            Data.Vigor = Math.Min(uint.MaxValue - Data.Vigor, amount) + Data.Vigor;
-            sync.Core[(uint)PlayerCoreAttribute.Vigor] = Data.Vigor;
+            // Vigor lives outside the attribute table; VigorService owns the cap and the recovery
+            // clock so the client's countdown stays consistent with the value we hand out.
+            VigorService.Add(this, amount, sync, allowVigorOverflow);
             return;
         }
 
@@ -348,10 +394,18 @@ public class PlayerInstance(PlayerGameData data)
         var attr = Attributes.Add(AttrIds.Currency.GroupId, sid, amount);
         Attributes.SyncTo(sync, attr);
         if (moneyType == AttrIds.Currency.Money)
-        {
-            foreach (var (key, value) in BuildMoneySync())
-                sync.Money[key] = value;
-        }
+            SyncMoneyChannels(sync);
+    }
+
+    /// <summary>
+    /// Mirrors the paid-currency balance (group 1, moneyType 1) into every money channel the client
+    /// reads. Any currency write that can change that balance has to call this, otherwise the shop
+    /// keeps showing the stale amount.
+    /// </summary>
+    public void SyncMoneyChannels(NtfSyncPlayer sync)
+    {
+        foreach (var (key, value) in BuildMoneySync())
+            sync.Money[key] = value;
     }
 
     private uint GetAttrValue(uint gid, uint sid)
@@ -359,6 +413,12 @@ public class PlayerInstance(PlayerGameData data)
         return Attributes.GetValue(gid, sid);
     }
 
+    /// <summary>
+    /// Re-applies the lobby bootstrap attributes. Currency (group 1) is deliberately excluded from
+    /// the "raise only" merge: the balances are owned by <see cref="CurrencyBootstrap"/> and by the
+    /// spend paths in <see cref="CurrencyService"/>, so letting the ratchet run over them would undo
+    /// every purchase on the next snapshot.
+    /// </summary>
     public void BuildPlayerAttr(bool additional = false)
     {
         QuestManager.MigrateChapterStarAwardMasks();
@@ -371,6 +431,9 @@ public class PlayerInstance(PlayerGameData data)
 
         foreach (var (gid, sid, value) in bootstrapAttrs)
         {
+            if (gid == AttrIds.Currency.GroupId)
+                continue;
+
             if (!seenAttrs.Add((gid, sid)))
                 continue;
 
@@ -446,10 +509,9 @@ public class PlayerInstance(PlayerGameData data)
         yield return (178, 1, 1_700_000_000);
         yield return (187, 1, 2);
 
-        // Cash.GetMoneyCount uses group 1 with sid = moneyId * 2 + 1 for most currencies.
-        // Fill a wide currency id range so every in-game currency starts effectively unlimited.
-        for (uint moneyId = 1; moneyId <= 200; moneyId++)
-            yield return (1, moneyId * 2 + 1, 999_999_999);
+        // Currency (group 1, sid = moneyId * 2 + 1) used to be pinned to 999_999_999 here, which
+        // made every balance infinite and defeated the shop prices. Starting balances now come from
+        // CurrencyBootstrap on first login only, so the player can actually run out.
 
         for (uint guideId = 1; guideId <= 150; guideId++)
             yield return (4, guideId, 999);

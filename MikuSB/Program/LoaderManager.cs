@@ -1,15 +1,20 @@
 using Microsoft.AspNetCore.Components;
 using MikuSB.Data;
 using MikuSB.Database;
+using MikuSB.Enums.Packet;
 using MikuSB.GameServer.Command;
+using MikuSB.GameServer.Game.Dlc;
+using MikuSB.GameServer.Game.Player;
 using MikuSB.GameServer.Server;
 using MikuSB.GameServer.Server.CallGS;
 using MikuSB.GameServer.Server.Packet;
+using MikuSB.Loader;
 using MikuSB.Internationalization;
 using MikuSB.MikuSB.Tool;
 using MikuSB.MikuSB.Update;
 using MikuSB.Proto;
 using MikuSB.SdkServer;
+using MikuSB.SdkServer.Utils;
 using MikuSB.TcpSharp;
 using MikuSB.Util;
 using MikuSB.Util.Security;
@@ -52,6 +57,10 @@ public class LoaderManager : MikuSB
 
         Logger.SetLogFile(new FileInfo(Path.Combine(logDir, "Server.log")));
 
+        // Localize the boot banner before its first line is printed. The language lives in Config.json,
+        // which LoadConfig() only reads further down, so peek at the file instead of waiting for it.
+        I18NManager.LoadLanguage(ConfigManager.PeekLanguage(), announce: false);
+
         // Init all directories
         try
         {
@@ -66,7 +75,7 @@ public class LoaderManager : MikuSB
 
         // Starting the server
         Logger.Info(I18NManager.Translate("Server.ServerInfo.StartingServer"));
-        Logger.Info($"Build version: {BuildVersion.Current}");
+        Logger.Info(I18NManager.Translate("Server.ServerInfo.BuildVersion", BuildVersion.Current));
 
         // Load the config
         Logger.Info(I18NManager.Translate("Server.ServerInfo.LoadingItem", I18NManager.Translate("Word.Config")));
@@ -94,6 +103,74 @@ public class LoaderManager : MikuSB
                 I18NManager.Translate("Server.ServerInfo.FailedToLoadItem", I18NManager.Translate("Word.Language")), e);
             Console.ReadLine();
             return;
+        }
+    }
+
+    /// <summary>
+    ///     True when the configured build is the CN one, i.e. the build that reaches the SDK through the hosts
+    ///     redirect. The stored region wins; an install that predates <c>Loader.Region</c> falls back to its launch
+    ///     arguments, and an install the wizard has not written yet is not CN.
+    /// </summary>
+    private static bool IsSpecificChannel() =>
+        SetupService.ResolveRegion(ConfigManager.Config.Loader.Region, ConfigManager.Config.Loader.Arguments) == "cn";
+
+    /// <summary>
+    ///     Points the specific-channel SDK host names at this machine for as long as the server runs.
+    ///     Needs an elevated process; when that is missing we keep going and only warn.
+    /// </summary>
+    public static void InitCnHosts()
+    {
+        if (!HostsFileService.IsSupported)
+            return;
+
+        if (!ConfigManager.Config.Loader.ManageCnHosts)
+        {
+            Logger.Info(I18NManager.Translate("Server.ServerInfo.HostsDisabled"));
+            return;
+        }
+
+        if (!IsSpecificChannel())
+        {
+            Logger.Info(I18NManager.Translate("Server.ServerInfo.HostsSkipped"));
+            return;
+        }
+
+        var result = HostsFileService.Ensure();
+        switch (result.Status)
+        {
+            case HostsSyncStatus.Applied:
+                Logger.Info(I18NManager.Translate("Server.ServerInfo.HostsApplied", HostsFileService.HostsPath));
+                break;
+            case HostsSyncStatus.AlreadyCurrent:
+                break;
+            case HostsSyncStatus.NotElevated:
+                Logger.Warn(I18NManager.Translate("Server.ServerInfo.HostsNotElevated"));
+                break;
+            default:
+                Logger.Warn(I18NManager.Translate("Server.ServerInfo.HostsFailed", result.Detail));
+                break;
+        }
+    }
+
+    /// <summary>
+    ///     Drops the managed block on the way out. This deliberately ignores <c>Loader.ManageCnHosts</c>:
+    ///     the switch decides whether a block may be written, and leaving one behind because the switch
+    ///     was flipped in the meantime would keep every SDK host name on this machine.
+    /// </summary>
+    public static void ReleaseCnHosts()
+    {
+        if (!HostsFileService.IsSupported)
+            return;
+
+        var result = HostsFileService.Restore();
+        switch (result.Status)
+        {
+            case HostsSyncStatus.Applied:
+                Logger.Info(I18NManager.Translate("Server.ServerInfo.HostsReleased"));
+                break;
+            case HostsSyncStatus.Failed:
+                Logger.Warn(I18NManager.Translate("Server.ServerInfo.HostsRestoreFailed", result.Detail));
+                break;
         }
     }
 
@@ -198,6 +275,95 @@ public class LoaderManager : MikuSB
         CommandExecutor.OnRunCommand += (sender, e) => { _ = CommandManager.HandleCommand(e, sender); };
         InGameConsoleBridge.ExecuteCommandAsync = InGameConsoleCommandService.ExecuteAsync;
 
+        // Admin panel data. Same reason as the line above: SdkServer only references Common, so the panel
+        // cannot touch sockets or the command table directly and goes through these delegates instead.
+        InGameConsoleBridge.GetOnlinePlayers = SnapshotOnlinePlayers;
+        InGameConsoleBridge.GetCommands = DescribeCommands;
+        InGameConsoleBridge.GetCurrencyCatalog = CurrencyService.GetCatalog;
+        // DlcRuntimeOverrides.EffectiveDlcId already folds "runtime pin wins, otherwise Config.json" into one
+        // value, so the panel never has to re-implement that precedence.
+        InGameConsoleBridge.GetServedDlc = () => new ServedDlcInfo(
+            DlcRuntimeOverrides.EffectiveDlcId,
+            DlcRuntimeOverrides.HasRuntimePin,
+            ConfigManager.Config.ServerOption.PinDlcActivityId != 0);
+        // Starting the client is the one action whose verdict the console cannot express: /game reports success
+        // and puts the real outcome in a localised sentence. The panel calls the loader directly so it can say
+        // "pid N" or the actual reason.
+        InGameConsoleBridge.LaunchGame = arguments =>
+        {
+            try
+            {
+                var pid = GameLaunchService.Launch(arguments);
+                return new GameLaunchResult(true, pid, "");
+            }
+            catch (Exception exception)
+            {
+                Logger.Error("Failed to launch game from the admin panel.", exception);
+                return new GameLaunchResult(false, 0, exception.Message);
+            }
+        };
+        // The updater lives in this assembly, so the panel reaches it through the bridge as well. It is the same
+        // check the console prompt uses at startup, only the confirmation is the button.
+        InGameConsoleBridge.CheckUpdate = async force =>
+        {
+            var check = await UpdateService.CheckAsync(force);
+            return new InGameConsoleBridge.UpdateStatus(
+                check.Error == null,
+                check.Current,
+                check.Latest,
+                check.Available,
+                check.AssetName,
+                check.AssetSize,
+                check.Notes,
+                check.Error);
+        };
+        InGameConsoleBridge.ApplyUpdate = UpdateService.ApplyFromPanelAsync;
+        // The host owns the process lifetime, so the updater asks it to stop rather than killing itself.
+        UpdateService.ShutdownRequest ??= code =>
+        {
+            Logger.Info($"Update applied from the admin panel; shutting down with exit code {code}.");
+            Task.Run(async () =>
+            {
+                await Task.Delay(500);
+                Environment.Exit(code);
+            });
+        };
+
         await IConsole.ListenConsole(exitToken);
     }
+
+    /// <summary>
+    /// Player roster for the admin panel. SocketListener.Connections is a SortedList the network threads
+    /// mutate without a lock, so a disconnect can race this enumeration; a partial view beats failing the
+    /// request, and the next call is consistent again.
+    /// </summary>
+    private static IReadOnlyList<OnlinePlayerInfo> SnapshotOnlinePlayers()
+    {
+        var players = new List<OnlinePlayerInfo>();
+        try
+        {
+            foreach (var socket in SocketListener.Connections.Values.ToList())
+            {
+                if (socket is not Connection connection) continue;
+                if (connection.State != SessionStateEnum.ACTIVE) continue;
+                if (connection.Player is not { } player) continue;
+
+                players.Add(new OnlinePlayerInfo(player.Uid, player.Data.Name ?? "",
+                    player.Data.Level, connection.RemoteEndPoint?.ToString() ?? ""));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Collection was modified mid-enumeration: the snapshot collected so far is still correct.
+        }
+
+        return players.OrderBy(info => info.Uid).ToArray();
+    }
+
+    private static IReadOnlyList<CommandDescriptor> DescribeCommands() =>
+        CommandManager.CommandInfo.Values
+            .Select(info => new CommandDescriptor(info.Name, info.Usage, info.Description, info.Alias,
+                info.Perm.Select(perm => perm.ToString()).ToArray()))
+            .OrderBy(descriptor => descriptor.Name, StringComparer.Ordinal)
+            .ToArray();
 }

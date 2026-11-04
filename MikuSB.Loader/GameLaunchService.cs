@@ -18,10 +18,32 @@ public static class GameLaunchService
         }
         PatchDownloadService.EnsurePatchPresent();
         var options = LaunchOptions.FromConfig(extraGameArguments);
-        return Launch(options);
+        return Launch(options, true);
+    }
+
+    /// <summary>
+    ///     Starts the client without loading the patch DLLs. Channels that are redirected through
+    ///     hosts records do not need an injected patch, and this path must not download one either.
+    /// </summary>
+    public static int LaunchWithoutPatch(params string[] extraGameArguments)
+    {
+        ConfigManager.LoadConfig();
+        if (ConfigManager.Config.Loader.EnableInGameConsole
+            && ConfigManager.Config.Loader.AutoUpdateInGameConsole)
+        {
+            InGameConsoleDownloadService.EnsurePresent();
+        }
+
+        var options = LaunchOptions.FromConfig(extraGameArguments);
+        return Launch(options, false);
     }
 
     public static int Launch(LaunchOptions options)
+    {
+        return Launch(options, true);
+    }
+
+    public static int Launch(LaunchOptions options, bool injectPatch)
     {
         var startupInfo = new STARTUPINFOW
         {
@@ -41,7 +63,8 @@ public static class GameLaunchService
                     lpProcessAttributes: IntPtr.Zero,
                     lpThreadAttributes: IntPtr.Zero,
                     bInheritHandles: false,
-                    dwCreationFlags: CreationFlags.CREATE_SUSPENDED | CreationFlags.CREATE_UNICODE_ENVIRONMENT,
+                    dwCreationFlags: (injectPatch ? CreationFlags.CREATE_SUSPENDED : 0) |
+                                     CreationFlags.CREATE_UNICODE_ENVIRONMENT,
                     lpEnvironment: environment,
                     lpCurrentDirectory: workingDirectory,
                     lpStartupInfo: ref startupInfo,
@@ -52,11 +75,14 @@ public static class GameLaunchService
 
             try
             {
-                foreach (var patchPath in options.PatchPaths)
-                    InjectDll(processInfo.hProcess, patchPath);
+                if (injectPatch)
+                {
+                    foreach (var patchPath in options.PatchPaths)
+                        InjectDll(processInfo.hProcess, patchPath);
 
-                if (ResumeThread(processInfo.hThread) == uint.MaxValue)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to resume game process.");
+                    if (ResumeThread(processInfo.hThread) == uint.MaxValue)
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to resume game process.");
+                }
 
                 return processInfo.dwProcessId;
             }
@@ -311,6 +337,17 @@ public sealed class LaunchOptions
         var gameArgs = new List<string>(config.Loader.Arguments ?? []);
         if (extraGameArguments is not null)
             gameArgs.AddRange(extraGameArguments.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        // The client has to be told which channel it is logging into, and that is exactly the answer the setup
+        // wizard collects. A config that never went through the wizard therefore has no honest way to launch:
+        // starting the client with a guessed channel only moves the failure into the login screen.
+        if (!gameArgs.Any(arg => arg.Contains("channelid", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "Loader.Arguments 里没有渠道参数（-channelid / -ChannelID）：请先在管理面板完成初始化，或启动时显式传入。 / " +
+                "Loader.Arguments has no channel argument: finish the setup wizard first, or pass one explicitly.");
+        }
+
         gameArgs = EnsureUserDirArgument(gameArgs, serverBaseDirectory);
         PersistResolvedArgumentsIfChanged(config, gameArgs);
 
@@ -347,15 +384,18 @@ public sealed class LaunchOptions
 
     private static List<string> EnsureUserDirArgument(List<string> gameArgs, string baseDirectory)
     {
-        var userDataDirectory = Path.GetFullPath(Path.Combine(baseDirectory, "Client_User_Data"));
-        Directory.CreateDirectory(userDataDirectory);
-
-        var userDirArgument = $"-userdir={userDataDirectory}";
+        // Verified 2026-10-05: Game.exe hangs inside GameBase.dll early init (44 MB, 54 modules,
+        // no UE4 modules, no window, no log, exits after ~2.5 min) whenever -userdir points at a
+        // path other than the game's own root. The official launcher passes
+        // -userdir="<GameDir>" (see the working Game.log "LogInit: Command Line:").
+        // An explicitly configured -userdir therefore wins; only add a fallback when it is absent.
         var existingIndex = gameArgs.FindIndex(x => x.StartsWith("-userdir=", StringComparison.OrdinalIgnoreCase));
         if (existingIndex >= 0)
-            gameArgs[existingIndex] = userDirArgument;
-        else
-            gameArgs.Add(userDirArgument);
+            return gameArgs;
+
+        var userDataDirectory = Path.GetFullPath(Path.Combine(baseDirectory, "Client_User_Data"));
+        Directory.CreateDirectory(userDataDirectory);
+        gameArgs.Add($"-userdir={userDataDirectory}");
 
         return gameArgs;
     }

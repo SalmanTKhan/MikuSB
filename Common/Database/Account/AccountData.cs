@@ -1,4 +1,4 @@
-﻿using MikuSB.Enums.Player;
+using MikuSB.Enums.Player;
 using MikuSB.Util;
 using MikuSB.Util.Extensions;
 using MikuSB.Util.Security;
@@ -178,6 +178,7 @@ public class AccountData : BaseDatabaseDataHelper
     {
         DispatchToken = Crypto.CreateSessionKey(Uid.ToString());
         DatabaseHelper.UpdateInstance(this);
+        SyncTokenCache();
         return DispatchToken;
     }
 
@@ -185,7 +186,31 @@ public class AccountData : BaseDatabaseDataHelper
     {
         ComboToken = Crypto.CreateSessionKey(Uid.ToString());
         DatabaseHelper.UpdateInstance(this);
+        SyncTokenCache();
         return ComboToken;
+    }
+
+    /// <summary>
+    /// Mirrors the freshly minted tokens into the instance held by <c>DatabaseHelper.UidInstanceMap</c>.
+    ///
+    /// The SDK login path resolves the account with <see cref="GetAccountByUserName"/>, which reads a
+    /// NEW detached row out of the database instead of handing back the cached instance. Minting a
+    /// token on that copy wrote the new value to the database while the cache kept the old one, and
+    /// <see cref="DatabaseHelper.SaveDatabase"/> serialises the CACHED instance for every uid that
+    /// logged a heartbeat (<c>PlayerInstance.OnHeartBeat</c> -> <c>ToSaveUidList</c>). The periodic
+    /// 5-minute save therefore reverted <c>ComboToken</c> to its pre-login value, after which
+    /// <c>HandlerReqLogin</c> could no longer match the token the client had just been given and
+    /// answered <c>NtfLogout</c> - the client sat on "识别中" forever. Keeping the cache in step with
+    /// every mint removes that writer of stale tokens.
+    /// </summary>
+    private void SyncTokenCache()
+    {
+        var cached = DatabaseHelper.GetInstance<AccountData>(Uid);
+        if (cached == null || ReferenceEquals(cached, this))
+            return;
+
+        cached.ComboToken = ComboToken;
+        cached.DispatchToken = DispatchToken;
     }
 
     #endregion

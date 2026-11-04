@@ -113,6 +113,18 @@ public class Weapon_Upgrade : CallGSHandler<WeaponUpgradeParam>
         sync.Items.AddRange(syncItems);
 
         var bMaxUnlock = maxLevel > 0 && targetWeapon.Level >= maxLevel;
+
+        // Passing the award unlock level unlocks the weapon's part award. The client keys both the
+        // red dot on the arms tab and the claim button off attribute 112 (Item/Weapon.lua:1503).
+        // bMaxUnLock above asks a different question (did the weapon reach its *current* cap) and
+        // stays as it was.
+        var awardUnlockLevel = WeaponPartAward.GetAwardUnlockLevel(config, targetTemplate.BreakLimitId);
+        if (awardUnlockLevel > 0 && targetWeapon.Level >= awardUnlockLevel &&
+            WeaponPartAward.MarkUnlocked(player, targetWeapon.TemplateId, sync))
+        {
+            DatabaseHelper.SaveDatabaseType(player.Data);
+        }
+
         var arg = $"{{\"bMaxUnLock\":{(bMaxUnlock ? "true" : "false")}}}";
         return Task.FromResult(CallGSResult.Ok(arg, sync));
     }

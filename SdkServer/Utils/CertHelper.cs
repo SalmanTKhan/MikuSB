@@ -38,12 +38,21 @@ public static class CertHelper
 
     private static X509Certificate2 LoadPkcs12(byte[] pfx)
     {
+        // Persisted user key set on purpose -- do NOT "optimise" this to EphemeralKeySet.
+        //
+        // History (see docs/progress/021): when this server is started from a shell that may only write
+        // inside the repository, persisting the key into the Windows user key store
+        // (%APPDATA%\Microsoft\Crypto\...) is denied and the import throws "Access denied", which used
+        // to kill the whole Kestrel/dispatch listener. EphemeralKeySet avoids that write, but on Windows
+        // SChannel/SslStream cannot use an ephemeral private key: Kestrel still binds and the port shows
+        // up as LISTENING, yet every TLS handshake dies with
+        // "System.IO.IOException: Received an unexpected EOF or 0 bytes from the transport stream",
+        // i.e. the client can never log in. A hard failure at startup (surfaced by SdkServer.Start's
+        // try/catch) is much easier to diagnose than a listener that accepts nothing.
         return X509CertificateLoader.LoadPkcs12(
             pfx,
             Password,
-            X509KeyStorageFlags.UserKeySet |
-            X509KeyStorageFlags.PersistKeySet |
-            X509KeyStorageFlags.Exportable);
+            X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
     }
 
     private static X509Certificate2 CreateSelfSigned(string host)

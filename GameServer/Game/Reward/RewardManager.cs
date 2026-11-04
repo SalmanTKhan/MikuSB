@@ -284,7 +284,7 @@ public sealed class RewardManager(PlayerInstance player) : BasePlayerManager(pla
                 return true;
             case ItemTypeEnum.TYPE_SUPPLIES:
             {
-                var templateId = (uint)GameResourceTemplateId.FromGdpl(reward.Genre, reward.Detail, reward.Particular, reward.Level);
+                var templateId = GameResourceTemplateId.FromGdpl(reward.Genre, reward.Detail, reward.Particular, reward.Level);
                 if (!GameData.SuppliesData.TryGetValue(templateId, out var supplies))
                     return false;
 

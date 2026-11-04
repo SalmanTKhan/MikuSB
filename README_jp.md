@@ -1,11 +1,11 @@
 # MikuSB
 
 <strong>MikuSB</strong>は、あるダンジョンアニメゲームのサーバーエミュレーターです。  
-`SdkServer`、`GameServer`、任意のローカル HTTP/HTTPS プロキシを 1 つの `net9.0` アプリとして起動します。  
+`SdkServer`、`GameServer`、任意のローカル HTTP/HTTPS プロキシを 1 つの `net10.0` アプリとして起動します。  
 
 [Discord](https://discord.gg/6MvWY774hX)
 
-English documentation is available in [README.md](README.md).
+[English](README.md) | [日本語](README_jp.md)
 
 ## 詐欺に関する警告
 
@@ -18,11 +18,12 @@ MikuSB は完全無料のオープンソースです。
 - `SdkServer`
   - HTTP API とディスパッチを返します
   - サーバー一覧、バージョン照会、各種フォールバックレスポンスを返します
+  - 特定のチャネル向けにバージョン `3.6.0` を返します
 - `GameServer`
   - TCP ベースのゲーム接続を受けます
-  - `ReqCallGS` と一部の通常パケットを処理します
+  - `ReqCallGS` と、対応済みシステムのゲームパケットを処理します
 - `Proxy`
-  - 有効時のみ `127.0.0.1:8888` で待ち受けます
+  - 有効時のみ `127.0.0.1:18888` で待ち受けます
   - 一部の Snowbreak 関連ドメインをローカル `SdkServer` へリダイレクトします
 - `Common` / `Proto` / `TcpSharp`
   - 共通データ、protobuf 定義、通信基盤です
@@ -51,6 +52,41 @@ dotnet build
 4. サーバーコンソールでアカウントを作成する  
 5. 楽しむ
 
+### ローカル上書き
+
+`Config/Config.json` は git 管理下にあるため、`GamePath` や `Arguments`、LAN アドレスなどの環境依存値は `Config/Config.Local.json` に書いてください。起動時に `Config.json` へマージされ、このファイルが存在する間は `Config.json` への書き戻しは行われません。
+
+## リリースビルド
+
+```powershell
+pwsh -File build.ps1
+```
+
+`build/MikuSB-win-x64/`、`build/MikuSB-win-x64.zip`、`build/MikuSB-win-x64.zip.sha256` を出力します。ローカルビルドのアセンブリにはビルド元の絶対パスが記録されるため、デバッグ情報は既定で削除されます。必要な場合は `-WithSymbols` を指定してください。nuget.org に接続できない環境では `-Source <folder>,<folder> -NoReadyToRun` でローカルキャッシュから復元できます。
+
+## 特定チャネルでの起動
+
+このフォークは特定のクライアント回線を追跡しており、upstream に対する修正を含みます:
+
+- DLC アクティビティと時代進行。クライアント側が独自に時間判定するアクティビティ向けに、サーバーから送る Lua ペイロードも含みます
+- Defend、Repression、Rogue3D のレベルクリア精算と難易度別クリア回数
+- アクティビティ、クエスト、ショップにまたがるパケット対応の拡大
+
+LAN / 直接ホストの協力ルームは断念しました。このブランチには含まれません。
+
+そのチャネルのビルドでは通常のログインより多くの準備が要ります:
+
+- **クライアントは 3.6.x**。SDK ハンドシェイクはチャンネル `pc_jinshan` / SDK `5.3.6` で応答します。そのチャネルの新しいビルドは、このフォークが持っていないパケット定義を必要とします。
+- **起動時に `jinshan` チャンネル**。`Loader.Arguments` に `-ChannelID=jinshan` が入っています。これが無いとクライアントはそのチャネルの SDK エンドポイントを要求しません。
+- **HTTPS は 7 ポート**。`HttpServer.Port`(21500) のほかに 443 / 11443 / 13443 / 18443 / 19443 / 31443 で待ち受けます。このチャネルの SDK は複数の固定エンドポイントへ別々のポートで接続するためです。443 が空いている必要があります。
+- **TLS**。証明書はホスト名ごとの自己署名で `sdk-certs/` にキャッシュされます。インポートが拒否されると Kestrel が `Failed to start the SDK/HTTP (dispatch) server` を出し、ログインが完了しません。
+- **ローカルプロキシか `hosts`**。`Proxy.Enabled` と `Loader.SetAllProxy`（既定でどちらも有効）なら SDK 通信は `127.0.0.1:18888` に向かい、上記のポートへ転送されます。プロキシを使わない場合はこれらのエンドポイントを `127.0.0.1` に向けてください。
+- **`hosts` の書き換えには管理者権限が必要**。サーバーは稼働中そのブロックを維持し(`Loader.ManageCnHosts`、既定で有効)、正常終了時に削除します。`/game-cn` はブロックを書き込み、リゾルバキャッシュを破棄し、パッチ DLL を注入せずにクライアントを起動します。権限が無い場合、コマンドは書き込みの代わりにブロックを表示します。クラッシュや強制終了でブロックが残った場合は、コンソールで `/hosts-clean`、または `MikuSB --clean-hosts`(サーバーを起動せずに削除でき、起動するとブロックが書き戻されるのを避けられます)を使ってください。
+- **リソース**。初回起動時に `dubstream3/MikuSB-Resource` を `Resources/` へダウンロードします(直連を 1 回試し、その後にミラーを順番に試行し、10 秒以内に 1 MB 取得できないソースは切り替えます。`MIKUSB_RESOURCE_ARCHIVE` と `MIKUSB_RESOURCE_MIRRORS` で上書き可能)。オフラインの場合は手動で配置してください。`item/templates/card.json` と `item/templates/weapon.json` が無いとデータ読み込みが止まります。
+- **.NET 10 + ASP.NET Core ランタイム**。配布 zip は framework-dependent です。
+
+ゲームサーバー本体は `127.0.0.1:21000`(TCP) を使用します。
+
 ## 機能一覧
 
 * [x] ログインシステム
@@ -76,11 +112,12 @@ dotnet build
 * [x] ルーチン作戦
 * [x] 逆説迷宮
 * [x] ロビー画面の編集
-* [✓] 惑星開拓
-* [✓] 夢の絵本
-* [ ] ショップ
-* [ ] マルチプレイシステム
-* [ ] 名誉紛争
+* [x] 惑星開拓
+* [x] 夢の絵本
+* [x] DLC アクティビティ / 時代進行
+* [ ] マルチプレイ（LAN / 直接ホスト） — 断念
+* [x] ショップ
+* [x] 名誉紛争
 
 
 ## 貢献者  

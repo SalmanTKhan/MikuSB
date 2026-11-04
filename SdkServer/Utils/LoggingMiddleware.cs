@@ -9,7 +9,11 @@ public class RequestLoggingMiddleware(RequestDelegate next)
     private const long MaxLoggedBodyBytes = 1024 * 1024;
 
     private static bool ShouldSkip(string path)
-        => path.StartsWith("/report") || path.Contains("/log/") || path == "/alive";
+        => path.StartsWith("/report")
+            || path.StartsWith("/data/report")
+            || path.StartsWith("/bisdk/batchpush")
+            || path.Contains("/log/")
+            || path == "/alive";
 
     private static bool ShouldLogBody(HttpRequest request)
     {
@@ -76,33 +80,84 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         var method = request.Method;
         var path = request.Path.ToString();
         var pathWithQuery = path + request.QueryString;
+        var host = request.Host.Value;
 
-        if (ConfigManager.Config.HttpServer.EnableLog && !ShouldSkip(path))
+        // The CN client reaches several different hosts (sh-jxsj.xgsdk.com, js2sdk.xoyo.com, ...)
+        // on the same listener, so the Host header has to be part of every log line.
+        var enabled = ConfigManager.Config.HttpServer.EnableLog && !ShouldSkip(path);
+
+        if (enabled)
         {
             var body = ShouldLogBody(request)
                 ? SanitizeForLog(await ReadBodyAsString(request))
                 : "<omitted>";
-            logger.Info($"REQ {method} {pathWithQuery} body={body}");
+            logger.Info($"REQ [{host}] {method} {pathWithQuery} body={body}");
         }
 
-        await next(context);
+        var originalBody = context.Response.Body;
+        MemoryStream? buffer = null;
+        if (enabled)
+        {
+            buffer = new MemoryStream();
+            context.Response.Body = buffer;
+        }
+
+        try
+        {
+            await next(context);
+        }
+        finally
+        {
+            context.Response.Body = originalBody;
+        }
 
         var statusCode = context.Response.StatusCode;
 
-        if (ShouldSkip(path))
-            return;
-        if (!ConfigManager.Config.HttpServer.EnableLog) return;
-        if (statusCode == 200)
+        if (buffer != null)
         {
-            logger.Info($"{method} {pathWithQuery} => {statusCode}");
+            buffer.Position = 0;
+            string responseText;
+            using (var reader = new StreamReader(buffer, Encoding.UTF8, leaveOpen: true))
+            {
+                responseText = await reader.ReadToEndAsync();
+            }
+
+            if (responseText.Length > 4096)
+                responseText = responseText[..4096] + "...<truncated>";
+
+            var line = $"RSP [{host}] {method} {pathWithQuery} => {statusCode} body={SanitizeForLog(responseText)}";
+            if (statusCode == 200)
+            {
+                logger.Info(line);
+            }
+            else if (statusCode == 404)
+            {
+                logger.Warn(line);
+            }
+            else
+            {
+                logger.Error(line);
+            }
+
+            buffer.Position = 0;
+            await buffer.CopyToAsync(originalBody);
         }
-        else if (statusCode == 404)
+        else if (!ShouldSkip(path) && ConfigManager.Config.HttpServer.EnableLog)
         {
-            logger.Warn($"{method} {pathWithQuery} => {statusCode}");
+            if (statusCode == 200)
+            {
+                logger.Info($"{method} {pathWithQuery} => {statusCode}");
+            }
+            else if (statusCode == 404)
+            {
+                logger.Warn($"{method} {pathWithQuery} => {statusCode}");
+            }
+            else
+            {
+                logger.Error($"{method} {pathWithQuery} => {statusCode}");
+            }
         }
-        else
-        {
-            logger.Error($"{method} {pathWithQuery} => {statusCode}");
-        }
+
+        buffer?.Dispose();
     }
 }

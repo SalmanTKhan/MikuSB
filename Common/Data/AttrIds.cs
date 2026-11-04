@@ -51,6 +51,8 @@ public static class AttrIds
         public const uint FaceGroupId = 60;
         public const uint BirthdayMailGroupId = 155;
         public const uint GiftboxSuggestGroupId = 182;
+        /// <summary>Superseded by <see cref="Jigsaw"/> (same values, richer names); kept for the
+        /// existing Activity_Refresh/GM helpers that already reference them.</summary>
         public const uint JigsawPuzzleGroupId = 34;
         public const uint JigsawPuzzleOverVigourSid = 0;
         public const uint JigsawPuzzleHelpTimeStartSid = 10;
@@ -58,8 +60,7 @@ public static class AttrIds
         public const uint JigsawPuzzleEnterTimeStartSid = 51;
         public const uint JigsawPuzzleEnterTimeEndSid = 90;
         public const uint JigsawPuzzlePieceStateStartSid = 100;
-        public const uint JigsawPuzzlePieceStateEndSid = 200;
-        public const uint PlayerReturnGroupId = 0;
+        public const uint JigsawPuzzlePieceStateEndSid = 200;        public const uint PlayerReturnGroupId = 0;
         public const uint PlayerReturnActSid = 15;
         public const uint PlayerReturnLastActiveTimeSid = 16;
         public const uint PlayerReturnStartTimeSid = 1;
@@ -134,6 +135,15 @@ public static class AttrIds
         public const uint TeamInfoSid = 51;
         public const uint TeamIdSid = 19;
         public const uint OperationFinishSid = 202;
+        // Script/Challenge/Chess/ChessClient.lua:33-35 GetCurActType() reads this slot before it decides
+        // whether first-clear counters live in (12, 10+id) or in Launch.GPASSID, and no client code ever
+        // writes it. Seeded per login as 1 (ChessActivityType.DLC1) so pass counters resolve correctly.
+        public const uint CurrentActTypeSid = 201;
+        // Server-private bookkeeping (client never reads it): the board session opened by EnterMap, kept
+        // as a JSON string so MapSettlement can validate nSeed and stay idempotent. The client clears its
+        // own save *before* sending the settlement (RichmanLogic.lua:498-499) and never retries, so this
+        // is the only record of "this run really happened".
+        public const uint ActiveSessionSid = 210;
         public const uint RichmanGid = 52;
         public const uint RichmanMapGid = 121;
         public const uint RichmanMapSidStride = 10;
@@ -195,6 +205,17 @@ public static class AttrIds
         public const uint StringGid = 26;
         public const uint LevelStartSid = 100;
         public const uint LevelSidStride = 10;
+
+        // Offsets inside a level's string block, which holds SubNum = 10 entries
+        // (SeasonBoss.lua:22-24). +1..+3 are the role/weapon/supporter snapshots of the best run,
+        // +4 the best score, +5 the best clear time, +6 the clear count and +7 the challenge count
+        // (SeasonBoss.lua:560-586).
+        public const uint BestRunRoleStartOffset = 1;
+        public const uint BestRunRoleCount = 3;
+        public const uint BestScoreOffset = 4;
+        public const uint ClearTimeOffset = 5;
+        public const uint ClearCountOffset = 6;
+        public const uint ChallengeCountOffset = 7;
     }
 
     public static class TargetShoot
@@ -239,8 +260,21 @@ public static class AttrIds
         public const uint ActivitySid = 0;
         public const uint ActivityIdSid = 1;
         public const uint CurrentDataSid = 2;
+        public const uint RefreshTimeSid = 3;
         public const uint ActivitySidStride = 1000;
         public const uint MemberSidStride = 10;
+
+        // Per attempt block: stride * (ActID - 1) + MemberSidStride * i + offset, i starting at 0
+        // (Challenge/WorldBoss/WorldBoss.lua:21-29 documents the same layout from the client side).
+        public const uint ChallengeCountOffset = 1;
+        public const uint DamageOffset = 2;
+        public const uint CharacterOffset = 3;   // +0..+2 = the three lineup characters (gdpl)
+        public const uint ActivityOffset = 6;
+        public const uint ActivityIdOffset = 7;
+        public const uint RecordedOffset = 8;
+
+        public static uint AttemptSid(uint actId, uint index)
+            => ActivitySidStride * (actId - 1) + MemberSidStride * index;
     }
 
     public static class Chat
@@ -273,6 +307,44 @@ public static class AttrIds
         public const uint MaxScoreSid = 6;
         public const uint FightGirlSid = 7;
         public const uint GirlSkillNumStartSid = 601;
+        public const uint GirlSkillNumEndSid = 610;
+
+        // Kill-count block layout (AlienDefense.lua:13-52 GetKillNum): subId =
+        // palIdx + PalKillNumStartSid + (levelType - 1) * MaxPalNum, capped at PalKillNumEndSid.
+        // Girl kills use the same shape with MaxGirlNum / GirlKillNumStartSid below.
+        public const uint MaxPalNum = 20;
+        public const uint MaxTypeNum = 5;
+        public const uint MaxGirlNum = 10;
+        public const uint PalKillNumStartSid = 10;
+        public const uint PalKillNumEndSid = 110;
+        public const uint GirlKillNumStartSid = 351;
+        public const uint GirlKillNumEndSid = 450;
+
+        // Per-roster clear-count blocks read by GetPassTime (AlienDefense.lua:148-166) when a
+        // Condition row carries the e == 1 flag (CheckPalCondition :178-179). Layout, with
+        // step = ceil(maxNum / 4) slots per level:
+        //     subId    = start + (levelIdx - 1) * step + idx / 4
+        //     bitStart = ((idx - 1) % 4) * 8, eight bits wide
+        // PalPassTimeEndSid caps levelIdx at 28 and GirlPassTimeEndSid at 34.
+        public const uint PalPassTimeStartSid = 111;
+        public const uint PalPassTimeEndSid = 250;
+        public const uint GirlPassTimeStartSid = 451;
+        public const uint GirlPassTimeEndSid = 550;
+
+        // Unlock blocks, one subId per roster entry (AlienDefense.lua:29-33, GetPalUnlockState
+        // :329-359): (251+nId) for pals, (551+nId) for girls. Each entry holds 2 bits per unlock
+        // type, bit (nType-1)*2 = "unlocked" and bit (nType-1)*2+1 = "new unlock seen" -- the flag
+        // AlienDefense.SetPalFlag clears once the player has looked at the roster entry.
+        public const uint PalUnlockStartSid = 251;
+        public const uint PalUnlockEndSid = 300;
+        public const uint GirlUnlockStartSid = 551;
+        public const uint GirlUnlockEndSid = 600;
+
+        // Pal active-skill levels (AlienDefense.lua:32-33, GetPalCostSkillLevel :362-373):
+        // subId = 301 + palIdx, one 4-bit field per skill starting at bit (nSkillIdx-1)*4.
+        public const uint PalCostSkillStartSid = 301;
+        public const uint PalCostSkillEndSid = 350;
+        public const uint MaxSkillNum = 8;
     }
 
     public static class BagRogue
@@ -332,6 +404,48 @@ public static class AttrIds
         public const uint DrawListSid = 1;
         public const uint BuyGoodsListSid = 2;
         public const uint HarvestNumSid = 3;
+    }
+
+    /// <summary>
+    /// 适格启示录 (jigsaw). Mirrors the constants at the top of Activity/JigsawPuzzle.lua:8-32:
+    /// the client reads every one of these slots, the server owns all writes.
+    /// </summary>
+    public static class Jigsaw
+    {
+        public const uint Gid = 34;
+
+        /// <summary>Overflow vigour (JigsawPuzzle.lua:13).</summary>
+        public const uint OverVigourSid = 0;
+
+        /// <summary>Girl obtained bitfield for schedules 1..30 (bit = schedule id).</summary>
+        public const uint GirlBitLowSid = 1;
+
+        /// <summary>Girl obtained bitfield for schedules &gt; 30 (bit = schedule id - 30).</summary>
+        public const uint GirlBitHighSid = 2;
+
+        /// <summary>Tuning (all pieces placed) bitfield, same split as the girl bits.</summary>
+        public const uint ActiveBitLowSid = 3;
+        public const uint ActiveBitHighSid = 4;
+
+        /// <summary>Per schedule 1..40: last time the hint button was used (sid = 10 + schedule).</summary>
+        public const uint HelpTimeStartSid = 10;
+
+        /// <summary>Per schedule: first entry timestamp (sid = 51 + schedule).</summary>
+        public const uint EnterTimeStartSid = 51;
+
+        /// <summary>Piece state bitfield base: 5 ints per schedule, 10 pieces per int, 3 bits each.</summary>
+        public const uint PieceStateStartSid = 100;
+
+        public const uint PieceStatesPerSchedule = 5;
+        public const uint PiecesPerStateInt = 10;
+        public const uint PieceStateBits = 3;
+
+        /// <summary>Client sanity cap (JigsawPuzzle.MaxPieceNum).</summary>
+        public const uint MaxPieceNum = 50;
+
+        public const uint StateNotOwned = 0;
+        public const uint StateOwned = 1;
+        public const uint StatePlaced = 2;
     }
 
     public static class Party
@@ -408,9 +522,29 @@ public static class AttrIds
         public const uint StringJourneyBuffSid = 6;
         public const uint BuffGroupId = 137;
         public const uint JourneyKeyIdStartSid = 31;
-        public const uint LevelPassStartSid = TechLevelStartSid;
+        // Per-difficulty clear counters: the client stores difficulty n at (Gid, LevelPassStartSid + n)
+        // and reserves the next ten sids for them (Rogue3DLogic.lua:25-26 LevelPassStart=20/LevelPassEnd=30,
+        // read back by Rogue3DLogic.GetLevelPassNum at :953-957). They must NOT alias the science tree,
+        // whose levels occupy TechLevelStartSid.. onwards.
+        public const uint LevelPassStartSid = 20;
+        public const uint LevelPassEndSid = 30;
         public const uint DailyBuffStartSid = 51;
         public const uint DailyBuffEndSid = 65;
+
+        // Score model (积分模式) layout, mirrored from the client getters in DLC/Rogue3D/Rogue3DLogic.lua -
+        // the client only ever reads these three banks, never writes them:
+        //   LevelScoreStart = 2401 .. 2410  (:77-78)  GetLevelScore(battleId) = value at 2401 + battleId - 1
+        //   ScoreAwardStart = 2421 .. 2430  (:80-81)  GetScoreAwardFlag(battleId, idx) = bit (idx % 30)
+        //   BuffRikiStart   = 2441 .. 2460  (:83-84)  GetBuffRikiFlag(id) = bit (id % 30) at 2441 + id / 30
+        public const uint ScoreModelLevelScoreStartSid = 2401;
+        public const uint ScoreModelLevelScoreEndSid = 2410;
+        public const uint ScoreModelScoreAwardStartSid = 2421;
+        public const uint ScoreModelScoreAwardEndSid = 2430;
+        public const uint ScoreModelBuffRikiStartSid = 2441;
+        public const uint ScoreModelBuffRikiEndSid = 2460;
+
+        /// <summary>Rogue3DLogic.lua:1178-1189 packs thirty ScoreBuff ids into one sid.</summary>
+        public const uint ScoreModelBuffBitPerSid = 30;
     }
 
     public static class StarWish
@@ -651,6 +785,50 @@ public static class AttrIds
         public const uint ForbidzoneGroupId = 140;
     }
 
+    /// <summary>
+    /// Assault Ops (进击行动, online type 13). The client keeps the whole mode progression in
+    /// attribute group 183 and reads every slot straight out of it - there is no "add chip" or
+    /// "buy slot" request at all (Launch/Online/Classes/OnlineAssaultOps.lua:9-43 constants,
+    /// :174-290 readers).
+    /// </summary>
+    public static class AssaultOps
+    {
+        public const uint GroupId = 183;
+
+        /// <summary>nTakeFormation: formation currently in use, 1..3.</summary>
+        public const uint TakeFormationSid = 2;
+
+        /// <summary>nMaxSeasonId: season the mission list is built from (0 hides every mission).</summary>
+        public const uint MaxSeasonSid = 3;
+
+        /// <summary>nSeason_Contribution.</summary>
+        public const uint SeasonContributionSid = 4;
+
+        /// <summary>nSysModeFlag: 3 x 8 bit, one byte per formation.</summary>
+        public const uint SysModeFlagSid = 5;
+
+        /// <summary>Formation block: 10 slots per formation, two positions per slot.</summary>
+        public const uint FormationStartSid = 11;
+        public const uint FormationEndSid = 40;
+        public const uint FormationStep = 10;
+        public const uint FormationCount = 3;
+        public const uint FormationPositions = 10;
+
+        /// <summary>Chip bag: 3 chips per slot, 10 bits of level each, chip ids 1..300.</summary>
+        public const uint ChipStartSid = 101;
+        public const uint ChipEndSid = 200;
+        public const uint ChipsPerSlot = 3;
+        public const uint ChipLevelBits = 10;
+        public const uint MaxChipId = 300;
+
+        /// <summary>Per-season history block (30 plain values per season, 99 seasons).</summary>
+        public const uint HistoryStartSid = 1001;
+        public const uint HistoryStep = 30;
+
+        /// <summary>The only season shipped in Resources/online/AssaultOps/assaultops_season.json.</summary>
+        public const uint DefaultSeasonId = 1;
+    }
+
     public static class Mail
     {
         public const uint RecycleGid = 59;
@@ -763,13 +941,47 @@ public static class AttrIds
         public const uint GroupId = 185;
         public const uint TaskGroupId = 186;
         public const uint ActivitySid = 1;
+        /// <summary>DonoDuel.lua:10 -- highest allocated card unique id (1..MaxBagItemUnique).</summary>
+        public const uint BagItemUniqueSid = 2;
         public const uint CurrentStockroomNumSid = 3;
         public const uint LeaderSkillSid = 4;
         public const uint RogueCountSid = 5;
+        public const uint ArenaKillNumSid = 6;
         public const uint RogueFormationStartSid = 10;
         public const uint RogueFormationEndSid = 13;
         public const uint ArenaFormationStartSid = 14;
         public const uint ArenaFormationEndSid = 17;
+        /// <summary>
+        /// DonoDuel.lua:18-23 -- the endless arena deck (arena config nArenaType == 3) uses six
+        /// attributes instead of four, i.e. twelve card slots.
+        /// </summary>
+        public const uint EndlessFormationStartSid = 18;
+        public const uint EndlessFormationEndSid = 23;
+        /// <summary>
+        /// DonoDuel.lua:47-53 -- a card occupies BagItemStep(10) consecutive sids starting at
+        /// BagItemStartSid(1001) + (uniqueId - 1) * BagItemStep, and the last one must stay inside
+        /// BagItemEndSid(4500). The client walks all MaxBagItemUnique(350) blocks when it builds the
+        /// deck (DonoDuel:GetBagAllCard :519-533), so an empty block is simply "no card".
+        /// </summary>
+        public const uint BagItemStartSid = 1001;
+        public const uint BagItemEndSid = 4500;
+        public const uint BagItemStep = 10;
+        public const uint MaxBagItemUnique = 350;
+        /// <summary>
+        /// DonoDuel.lua:31-32 -- the skill tree ("科技树") is a bit array: node N lives in bit
+        /// (N-1)%30 of attribute (185, 91 + floor((N-1)/30)), i.e. sid 91 holds nodes 1..30 and
+        /// sid 92 holds 31..60 (read back by DonoDuel:GetSkillTreeFlag :318-330).
+        /// </summary>
+        public const uint SkillTreeStartSid = 91;
+        public const uint SkillTreeEndSid = 92;
+        public const uint SkillTreePerSid = 30;
+        /// <summary>
+        /// DonoDuelRogue.lua:10 -- DonoDuelRogue.MiniGameNum: how many turntable ("小游戏", the rogue
+        /// room's 转盘) rolls the player has already paid for. The widget shows
+        /// TotalCount - this (umg_donoduel_turntable.lua:78, :140 UpdateCount), where TotalCount and
+        /// the per-roll price come from donoduel_config.json ConfigID 17 = [plays, price].
+        /// </summary>
+        public const uint RogueMiniGameUsedSid = 504;
     }
 
     public static class Riki

@@ -1,3 +1,4 @@
+using MikuSB.Internationalization;
 using MikuSB.Proto;
 using MikuSB.Util;
 using System.Reflection;
@@ -18,17 +19,28 @@ public static class CallGSRouter
             if (attr == null) continue;
             Handlers[attr.Api] = (ICallGSHandler)Activator.CreateInstance(type)!;
         }
-        Logger.Info($"Registered {Handlers.Count} CallGS handlers.");
+        Logger.Info(I18NManager.Translate("Server.ServerInfo.RegisterItem",
+            Handlers.Count.ToString(), "CallGS"));
     }
 
     public static async Task Route(Connection connection, ReqCallGS req, ushort seqNo)
     {
+        var player = connection.Player;
+        if (player == null)
+        {
+            // The session is not fully logged in yet: the client reconnects as soon as the TCP
+            // listener is up, which can be before the resource manager finished loading. Dispatching
+            // would throw on the missing player, and answering would only confuse the client.
+            Logger.Warn($"Dropping CallGS {req.Api} because the connection has no player yet.");
+            return;
+        }
+
         if (Handlers.TryGetValue(req.Api, out var handler))
         {
             try
             {
                 await handler.Handle(connection, req.Param, seqNo);
-                await connection.Player!.OnHeartBeat();
+                await player.OnHeartBeat();
             }
             catch (Exception e)
             {

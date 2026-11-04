@@ -7,26 +7,22 @@ namespace MikuSB.GameServer.Game.Rogue3D;
 internal static class Rogue3DStateHelper
 {
     private const uint GroupId = AttrIds.Rogue3D.Gid;
-    private const uint LevelPassStart = AttrIds.Rogue3D.LevelPassStartSid;
     private const uint DailyBuffStart = AttrIds.Rogue3D.DailyBuffStartSid;
     private const uint DailyBuffEnd = AttrIds.Rogue3D.DailyBuffEndSid;
     private const int DailyBuffBitCount = 10;
     private const int DailyBuffBitsPerValue = DailyBuffBitCount + 1;
     private const uint DailyBuffMask = (1u << DailyBuffBitCount) - 1;
-    private const uint UnlockDiff1Sid = LevelPassStart + 1;
-    private const uint UnlockDiff2Sid = LevelPassStart + 2;
-    private const uint UnlockDiff3Sid = LevelPassStart + 3;
-    private const uint UnlockDiff4Sid = LevelPassStart + 4;
     private static uint[]? ShuffledDailyBuffIds;
 
     public static NtfSyncPlayer EnsureUnlockState(PlayerInstance player)
     {
         var sync = new NtfSyncPlayer();
 
-        EnsureMinAttr(player, UnlockDiff1Sid, 1, sync);
-        EnsureMinAttr(player, UnlockDiff2Sid, 1, sync);
-        EnsureMinAttr(player, UnlockDiff3Sid, 1, sync);
-        EnsureMinAttr(player, UnlockDiff4Sid, 1, sync);
+        // The per-difficulty clear counters (AttrIds.Rogue3D.LevelPassStartSid + nDiffId, i.e. sids 21..24)
+        // are deliberately left alone here: Rogue3DSettlement is the only writer, and it counts a
+        // difficulty once the run is actually cleared. Seeding them would both fake the "cleared" badge in
+        // uw_rogue_difficulty.lua:57-62 and skip the progression server_01_difficult.json describes
+        // (difficulty 3 -> clear counter of 2, 4 -> 3, season 100 -> 2).
 
         foreach (var scienceSid in GetUnlockTalentScienceSids())
         {

@@ -73,7 +73,7 @@ public class GirlCard_UpdateLevel : CallGSHandler<GirlCardUpdateLevelParam>
                 return Task.FromResult(CallGSResult.Error("tip.material_not_enough"));
             }
 
-            if (!GameData.SuppliesData.TryGetValue((uint)item.TemplateId, out var supplies) || supplies.ProvideExp == 0)
+            if (!GameData.SuppliesData.TryGetValue(item.TemplateId, out var supplies) || supplies.ProvideExp == 0)
             {
                 return Task.FromResult(CallGSResult.Error("error.BadParam"));
             }

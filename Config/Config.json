@@ -2,7 +2,8 @@
   "HttpServer": {
     "BindAddress": "0.0.0.0",
     "PublicAddress": "127.0.0.1",
-    "Port": 21500
+    "Port": 21500,
+    "EnableLog": false
   },
   "GameServer": {
     "BindAddress": "0.0.0.0",
@@ -29,15 +30,34 @@
     ],
     "ServerProfile": {
       "Name": "Miku-chan",
-      "Uid": 80
+      "Signature": "SnowBreak Private Server",
+      "Uid": 80,
+      "Level": 100,
+      "Gender": 1
     },
+    "EnableGmMenu": false,
     "AutoCreateUser": true,
     "SavePersonalDebugFile": false,
     "AutoSendResponseWhenNoHandler": true,
-    "EnableDebug": true,
-    "DebugMessage": true,
-    "DebugDetailMessage": true,
-    "DebugNoHandlerPacket": true
+    "EnableDebug": false,
+    "DebugMessage": false,
+    "DebugDetailMessage": false,
+    "DebugNoHandlerPacket": false,
+    "PinDlcActivityId": 35,
+    "PinLoginIdentity": "",
+    "LanGuestLoginIdentity": "",
+    "PerIdentityAccount": true,
+    "LoginPasswordRequired": false,
+    "LoginDefaultPassword": "123456",
+    "AllowStaleTokenLogin": true,
+    "OnlineRoomAddress": "",
+    "OnlineRoomLevels": {},
+    "OnlineRoomDsAddress": "",
+    "OnlineRoomLanMode": false,
+    "OnlineRoomLanHost": "127.0.0.1",
+    "OnlineRoomListenPort": 7777,
+    "OnlineRoomHostUid": 0,
+    "OnlineRoomRosterOpcode": 1031
   },
   "Proxy": {
     "Enabled": true,
@@ -53,9 +73,10 @@
     "InGameConsoleLoaderPath": "Patch\\MikuSB-InGame-GUI-Console.Loader.dll",
     "Arguments": [
       "-FeatureLevelES31",
-      "-channelid=seasun",
+      "-ChannelID=jinshan",
       "-NoSplash"
     ],
-    "SetAllProxy": true
+    "SetAllProxy": true,
+    "ManageCnHosts": true
   }
 }

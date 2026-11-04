@@ -1,4 +1,4 @@
-﻿using MikuSB.Enums.Packet;
+using MikuSB.Enums.Packet;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.GameServer.Server.Packet;
 using MikuSB.TcpSharp;
@@ -14,6 +14,12 @@ public class Connection(Socket socket, IPEndPoint remote) : SocketConnection(soc
     private static readonly Logger Logger = new("GameServer");
 
     public PlayerInstance? Player { get; set; }
+
+    /// <summary>online/online.json Id the client asked for with ReqOnlineRoom(303), 0 when unknown.</summary>
+    public uint OnlineRoomId { get; set; }
+
+    /// <summary>Team id the client asked for with ReqOnlineRoom(303) (10 = Online.TeamId).</summary>
+    public uint OnlineRoomTeamId { get; set; }
 
     private static readonly HashSet<string> DummyPacketNames =
     [

@@ -3,8 +3,10 @@ using MikuSB.Data.Excel;
 using MikuSB.Database;
 using MikuSB.Database.Player;
 using MikuSB.Enums.Item;
+using MikuSB.GameServer.Game.Gacha;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.Proto;
+using MikuSB.Util;
 using Newtonsoft.Json.Linq;
 using System.Text;
 using System.Text.Json;
@@ -29,6 +31,10 @@ public class Gacha_Launch : CallGSHandler<GachaLaunchParam>
     private const int UpSelectIndex = 0;
     private const int UpSelectGetFlagIndex = 1;
     private static readonly Random Rng = new();
+
+    // A static logger keeps the module name readable: GetByClassName() inside an async method
+    // resolves to the compiler-generated state machine.
+    private static readonly Logger Log = new(nameof(Gacha_Launch));
 
     protected override async Task<CallGSResult> HandleAsync(CallGSContext context, GachaLaunchParam req)
     {
@@ -64,6 +70,18 @@ public class Gacha_Launch : CallGSHandler<GachaLaunchParam>
         var tbTrigger = new List<bool>();
         var syncItems = new List<Item>();
         var sync = new NtfSyncPlayer();
+
+        // Gacha.lua:443 already refused the request when the client's own CheckCost could not pay,
+        // so a banner without a usable cost row is a data error, not a player problem: the price is
+        // resolved before the roll so such a pull is rejected without touching any player state.
+        var price = GachaPrice.Resolve(gachaCfg, (uint)req.NTime);
+        if (price == null)
+        {
+            Log.Warn($"Gacha {req.NId} has no usable cast cost row for x{req.NTime}.");
+            return CallGSResult.Error("error.BadParam");
+        }
+
+        var charged = false;
 
         for (int i = 0; i < req.NTime; i++)
         {
@@ -112,6 +130,17 @@ public class Gacha_Launch : CallGSHandler<GachaLaunchParam>
                 continue;
             }
 
+            // The pull is charged with the first award it is about to grant: nothing above this
+            // point has touched the player state, so a pool that grants nothing (the awards.Count ==
+            // 0 path below) stays free instead of taking the tickets for nothing.
+            if (!charged)
+            {
+                if (price.Charge(player, sync) is { } priceError)
+                    return CallGSResult.Error(priceError);
+
+                charged = true;
+            }
+
             var g = item.GDPL[0];
             var d = item.GDPL[1];
             var p = item.GDPL[2];
@@ -157,6 +186,7 @@ public class Gacha_Launch : CallGSHandler<GachaLaunchParam>
 
         if (awards.Count == 0)
         {
+            // Nothing was granted, and nothing was charged either (see the charge inside the loop).
             return CallGSResult.Error("error.BadParam");
         }
 
@@ -165,6 +195,10 @@ public class Gacha_Launch : CallGSHandler<GachaLaunchParam>
         DatabaseHelper.SaveDatabaseType(player.Data);
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
         DatabaseHelper.SaveDatabaseType(player.CharacterManager.CharacterData);
+
+        Log.Info(
+            $"Gacha {req.NId} pull x{req.NTime} launched by uid={player.Uid} " +
+            $"(paid {price.Describe()}, granted {awards.Count}).");
 
         sync.Items.AddRange(syncItems);
 

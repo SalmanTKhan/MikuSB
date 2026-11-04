@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
 using MikuSB.Configuration;
+using MikuSB.Internationalization;
 using MikuSB.Util;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ public sealed class ProxyServer(
         "amazingseasun.com",
         "seasungames.com",
         "snowbreak-game.com",
+        "xgsdk.com",
         "xoyo.games",
         "yo.games",
         "qcloud.com",
@@ -35,7 +37,7 @@ public sealed class ProxyServer(
     {
         if (!_options.Enabled)
         {
-            logger.Info("MikuSB proxy is disabled");
+            logger.Info(I18NManager.Translate("Server.ServerInfo.ProxyDisabled"));
             return;
         }
 
@@ -44,7 +46,7 @@ public sealed class ProxyServer(
             var listener = new TcpListener(IPAddress.Parse(ListenAddress), port);
             listener.Start();
             _listeners.Add(listener);
-            logger.Info($"MikuSB SOCKS5 proxy listening on {ListenAddress}:{port}");
+            logger.Info(I18NManager.Translate("Server.ServerInfo.ProxyListening", ListenAddress, port.ToString()));
             _ = Task.Run(() => AcceptLoopAsync(listener, port, stoppingToken), stoppingToken);
         }
 

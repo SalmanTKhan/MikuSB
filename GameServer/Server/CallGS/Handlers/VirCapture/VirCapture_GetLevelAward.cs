@@ -139,7 +139,7 @@ public class VirCapture_GetLevelAward : CallGSHandler<VirCaptureGetLevelAwardPar
                 break;
             case ItemTypeEnum.TYPE_SUPPLIES:
             {
-                var templateId = (uint)GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
+                var templateId = GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
                 if (GameData.SuppliesData.TryGetValue(templateId, out var supplies))
                 {
                     var item = await player.InventoryManager.AddSuppliesItem(supplies, count, sendPacket: false);

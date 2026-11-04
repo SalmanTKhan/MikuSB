@@ -1,8 +1,10 @@
 using MikuSB.Data;
 using MikuSB.Data.Excel;
+using MikuSB.GameServer.Game.Dlc;
 using MikuSB.GameServer.Game.Player;
+using MikuSB.GameServer.Server.Packet.Recv.Login;
 using MikuSB.Proto;
-using System.Globalization;
+using MikuSB.Util;
 using System.Text.Json.Nodes;
 
 namespace MikuSB.GameServer.Server.CallGS.Handlers.DLC;
@@ -13,13 +15,14 @@ public class DLCLogic_CheckOpenAct : CallGSHandler
     private const uint GroupId = AttrIds.Dlc.Gid;
     private const uint ActIdSid = AttrIds.Dlc.ActIdSid;
 
-    protected override Task<CallGSResult> HandleAsync(CallGSContext context, string param)
+    protected override async Task<CallGSResult> HandleAsync(CallGSContext context, string param)
     {
         var now = DateTime.Now;
-        var act = ResolveCurrent(GameData.DlcActivityData.Values, now);
+        var pinnedId = DlcRuntimeOverrides.EffectiveDlcId;
+        var act = ResolvePinned(pinnedId) ?? ResolveCurrent(GameData.DlcActivityData.Values, now);
         if (act == null)
         {
-            return Task.FromResult(CallGSResult.Ok("{\"bOpen\":false}"));
+            return CallGSResult.Ok("{\"bOpen\":false}");
         }
 
         var player = context.Connection.Player!;
@@ -30,11 +33,31 @@ public class DLCLogic_CheckOpenAct : CallGSHandler
         {
             ["bOpen"] = true,
             ["nId"] = act.Id,
-            ["nStartTime"] = ToUnixSeconds(ParseConfigTime(act.EnterStartTime)),
-            ["nEndTime"] = ToUnixSeconds(ParseConfigTime(act.CloseEndTime))
+            ["nStartTime"] = DlcRuntimeOverrides.ToUnixSeconds(DlcRuntimeOverrides.ParseConfigTime(act.EnterStartTime)),
+            ["nEndTime"] = DlcRuntimeOverrides.ToUnixSeconds(DlcRuntimeOverrides.ParseConfigTime(act.CloseEndTime))
         };
 
-        return Task.FromResult(CallGSResult.Ok(response.ToJsonString(), sync));
+        // The client rebuilds the DLC UI right after this answer and hides/marks "expired" every
+        // entry whose local window is not current, so every window override (DLC row, chapter,
+        // defend act, shop tabs are pulled separately) is pushed before answering.
+        await HandlerReqLogin.PushDlcWindowOverrides(context.Connection);
+
+        return CallGSResult.Ok(response.ToJsonString(), sync);
+    }
+
+    /// <summary>
+    /// Returns the activity configured through <c>ServerOption.PinDlcActivityId</c>, if any.
+    /// </summary>
+    private static DlcActivityExcel? ResolvePinned(uint pinnedId)
+    {
+        if (pinnedId == 0)
+            return null;
+
+        if (GameData.DlcActivityData.TryGetValue(pinnedId, out var pinned))
+            return pinned;
+
+        Logger.GetByClassName().Warn($"PinDlcActivityId={pinnedId} was not found in dlc/dlc_activities, falling back to time-window resolution.");
+        return null;
     }
 
     private static DlcActivityExcel? ResolveCurrent(IEnumerable<DlcActivityExcel> configs, DateTime now)
@@ -43,8 +66,8 @@ public class DLCLogic_CheckOpenAct : CallGSHandler
             .Select(x => new
             {
                 Config = x,
-                Start = ParseConfigTime(x.EnterStartTime),
-                End = ParseConfigTime(x.CloseEndTime)
+                Start = DlcRuntimeOverrides.ParseConfigTime(x.EnterStartTime),
+                End = DlcRuntimeOverrides.ParseConfigTime(x.CloseEndTime)
             })
             .Where(x => x.Start.HasValue && x.End.HasValue)
             .OrderBy(x => x.Start)
@@ -56,30 +79,6 @@ public class DLCLogic_CheckOpenAct : CallGSHandler
 
         var latestStarted = parsed.LastOrDefault(x => x.Start <= now && x.End > x.Start);
         return latestStarted?.Config;
-    }
-
-    private static DateTime? ParseConfigTime(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        var normalized = raw.Trim().Trim('[', ']');
-        if (normalized.Length != 12)
-            return null;
-
-        return DateTime.TryParseExact(
-            normalized,
-            "yyyyMMddHHmm",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var value)
-            ? value
-            : null;
-    }
-
-    private static long ToUnixSeconds(DateTime? value)
-    {
-        return value.HasValue ? new DateTimeOffset(value.Value).ToUnixTimeSeconds() : 0L;
     }
 
     private static void SetAttr(PlayerInstance player, uint sid, uint value, NtfSyncPlayer sync)

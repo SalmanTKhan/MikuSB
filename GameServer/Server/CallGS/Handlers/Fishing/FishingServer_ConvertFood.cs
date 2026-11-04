@@ -165,7 +165,7 @@ public class FishingServer_ConvertFood : CallGSHandler<FishingConvertFoodParam>
         {
             case ItemTypeEnum.TYPE_SUPPLIES:
             {
-                var templateId = (uint)GameResourceTemplateId.FromGdpl(createItem[0], detail, particular, level);
+                var templateId = GameResourceTemplateId.FromGdpl(createItem[0], detail, particular, level);
                 if (GameData.SuppliesData.TryGetValue(templateId, out var supplies))
                 {
                     var item = await player.InventoryManager.AddSuppliesItem(supplies, totalCount, sendPacket: false);
