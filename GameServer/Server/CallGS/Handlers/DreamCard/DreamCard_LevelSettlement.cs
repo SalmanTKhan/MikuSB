@@ -130,7 +130,8 @@ public class DreamCard_LevelSettlement : CallGSHandler
         return index.TryGetOrdinaryRewardId(levelId, diff, out rewardId);
     }
 
-    private static uint ResolveCurrentChallengePeriodId(DateTime now)
+    // Shared with DreamCard_LevelFail: a lost challenge run reports the same open period as a cleared one.
+    public static uint ResolveCurrentChallengePeriodId(DateTime now)
     {
         var index = SettlementIndex.Value;
         return index?.ResolveCurrentChallengePeriodId(now) ?? 0;

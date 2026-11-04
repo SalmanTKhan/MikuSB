@@ -128,6 +128,11 @@ public class RouteController : ControllerBase
             msg = "success"
         };
 
+        // The CN client reads this through sh-jxsj.xgsdk.com and expects the camelCase keys the
+        // real service sends; the international flow keeps the previous snake_case behaviour.
+        if (Request.Host.Host.Contains("xgsdk.com", StringComparison.OrdinalIgnoreCase))
+            return Utils.ExactJson.Serialize(rsp);
+
         return Ok(rsp);
     }
 

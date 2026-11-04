@@ -377,12 +377,12 @@ FodyWeavers.xsd
 tools/client/edited/
 *.local.log
 
-/Config/Database/
-
 /.local/
 
-# Local configuration, proprietary client material, captures and credentials
+# Local runtime state, configuration, proprietary client material, captures and credentials (never commit)
+/Config/Database/
 /Config/Config.local.json
+/Config/Config.Local.json
 /Resources/
 /MikuSB-Resource/
 *.pak
@@ -391,3 +391,14 @@ tools/client/edited/
 *.keylog
 proxy-certs/
 sdk-certs/
+
+# Build output
+[Oo]bj/
+/build/
+/artifacts/
+
+# Runtime-generated admin panel bits and config backups (never commit)
+/Config/admin-token.txt
+/Config/admin-panel.url
+/Config/Config.json.bak-*
+/.temp_*

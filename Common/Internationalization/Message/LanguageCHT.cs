@@ -1,4 +1,4 @@
-﻿namespace MikuSB.Internationalization.Message;
+namespace MikuSB.Internationalization.Message;
 
 #region Root
 
@@ -36,6 +36,8 @@ public class ServerTextCHT
 public class WordTextCHT
 {
     public string Furniture => "傢俱";
+    public string Girl => "角色";
+    public string GirlPiece => "角色碎片";
     public string Skin => "皮膚";
     public string WeaponPart => "武器部件";
     public string CallItem => "召喚道具";
@@ -133,6 +135,8 @@ public class CommandTextCHT
     public GiveAllTextCHT GiveAll { get; } = new();
     public DebugTextCHT Debug { get; } = new();
     public GameCommandTextCHT Game { get; } = new();
+    public GameCommandCnTextCHT GameCn { get; } = new();
+    public GameCommandHostsCleanTextCHT HostsClean { get; } = new();
 }
 
 #endregion
@@ -180,6 +184,59 @@ public class ServerInfoTextCHT
     public string WaitForAllDone => "現在還不可以進入遊戲, 請等待所有項目加載完成後再試";
 
     public string UnhandledException => "發生未經處理的異常: {0}";
+
+    public string CurrentLanguage => "當前語言: {0}";
+    public string BuildVersion => "構建版本: {0}";
+    public string RequiredResourcesMissing => "缺少必要的資源文件, 正在下載資源包…";
+    public string InstallingResources => "正在安裝資源到 {0}…";
+    public string ResourcesInstalled => "已安裝 {0} 個資源文件到 {1}。";
+    /// <summary>資源數據版本已更新 ({0} → {1}), 正在重新下載整包…</summary>
+    public string ResourcesOutdated => "資源數據版本已更新 ({0} → {1}), 正在重新下載整包…";
+    public string DownloadSourceDirect => "下載源: {0} (GitHub 直連)";
+    public string DownloadSourceMirror => "下載源: {2} (鏡像 {0}/{1}), 直連不可用, 已自動切換";
+    public string DownloadProgress => "下載進度 {0}% ({1}/{2}), {3}, 剩餘 {4}, 來源 {5}";
+    public string Unknown => "未知";
+    public string DownloadedItem => "已從 {1} 下載 {0}。";
+    public string DownloadedThroughMirror => "已通過鏡像 {1} 下載 {0} (直連 GitHub 失敗)。";
+    public string DownloadSourceFailed => "下載源 {0} 失敗 ({1}), 正在切換下一個源…";
+    public string DownloadSourceFailedAll => "下載源 {0} 失敗 ({1}), 已沒有可用的源。";
+    public string SlowSourceFallback => "沒有下載源達到 {0}；改用進度最多的 {1}（{3} 秒內收到 {2}，約 {4}）。網路狀況不佳，本次下載會比平時更久。";
+    public string DownloadStalled => "{0} 在 {1} 秒內只收到 {2}, 低於 {3} 的下限";
+    public string DownloadNoResponse => "{0} 在 {1} 秒內沒有返回響應頭";
+    public string DownloadTimedOut => "{0} 超過 {1} 秒仍未下載完成";
+    public string DownloadNoData => "{0} 沒有返回任何數據。";
+    public string ConfirmUpdate => "發現新版本: {0} -> {1}。現在更新? [Y/n]: ";
+    public string AntiScamSeparator => "============================================================";
+    public string AntiScamFree => "MikuSB 完全免費且開源。";
+    public string AntiScamScam => "如果你為這個服務端付過錢, 說明你被騙了。";
+    public string AntiScamRefund => "請立即申請退款, 並把賣家舉報給我們。";
+    public string AntiScamDiscord => "Discord: https://discord.gg/aMwCu9JyUR";
+
+    public string HostsDisabled => "已在啟動選項中禁用 hosts 維護。";
+    public string HostsSkipped => "跳過 hosts 維護: 當前啟動渠道不是特定渠道。";
+    public string HostsApplied => "已把特定渠道的域名指向本機 ({0})。";
+    public string HostsNotElevated => "沒有管理員權限, 無法修改 hosts 文件。請以管理員身份運行服務端, 或在其中用 /game-cn 打印要寫入的條目。";
+    public string HostsFailed => "修改 hosts 文件失敗: {0}";
+    public string HostsReleased => "已移除託管的 hosts 段落。";
+    public string HostsRestoreFailed => "還原 hosts 文件失敗: {0}";
+    public string HostsNothingToRemove => "hosts 裡沒有 MikuSB 的託管段落, 無需清理。";
+    public string HostsCleanElevated => "清理 hosts 需要管理員權限, 請以管理員身份重新運行。";
+    public string HostsCleanUnsupported => "當前系統不支援自動維護 hosts。";
+
+    public string AutoUpdateSkippedNotConfigured => "未配置 GitHub 發布源, 已跳過自動更新。";
+    public string AutoUpdateSkippedNoUpdater => "沒有找到 MikuSB.Updater.exe, 已跳過自動更新。";
+    public string CurrentBuildVersion => "當前構建版本: {0}";
+    public string LatestReleaseMissingAsset => "最新版本 {0} 裡沒有 {1}。";
+    public string SkippedUpdateByUser => "已按你的選擇跳過更新 {0}。";
+    public string DownloadingUpdate => "正在下載更新 {0}。";
+    public string DownloadingResourcePackage => "正在下載資源包。";
+    public string FailedToStartUpdater => "啟動 MikuSB.Updater.exe 失敗。";
+    public string UpdateHandedOver => "發現新版本 {0}, 已交給更新程序, 本進程即將退出。";
+    public string AutoUpdateCheckFailed => "自動更新檢查失敗, 繼續正常啟動。";
+    public string LatestReleaseNotAccessible => "無法訪問 GitHub 上的最新發布 (倉庫仍為私有, 屬正常現象)。";
+    public string ReleaseLookupFailed => "通過 {0} 查詢發布信息失敗 ({1}), 正在嘗試下一個源。";
+    public string ProxyListening => "MikuSB SOCKS5 代理正在監聽 {0}:{1}";
+    public string ProxyDisabled => "MikuSB 代理已停用。";
 }
 
 #endregion
@@ -269,7 +326,9 @@ public class GiveAllTextCHT
                            "用法：/giveall profile <detail/-1> -g<類型> -p<特定> -l<等級>" +
                            "用法：/giveall skinpart <detail/-1> -g<類型> -p<特定> -l<等級>" +
                            "用法：/giveall weaponpart <detail/-1> -g<類型> -p<特定> -l<等級>" +
-                           "用法：/giveall call <detail/-1> -g<類型> -p<特定> -l<等級>";
+                           "用法：/giveall call <detail/-1> -g<類型> -p<特定> -l<等級>\n" +
+                           "用法：/giveall piece <detail/-1> -p<特定> -c<數量>\n" +
+                           "用法：/giveall girl <detail/-1> -p<特定>";
     public string NotFound => "未找到 {0}！";
     public string GiveAllItems => "已向玩家添加 {0} 個 {1}！";
 }
@@ -295,6 +354,30 @@ public class GameCommandTextCHT
     public string Usage => "用法: /game [額外遊戲參數]";
     public string Started => "遊戲已啟動。PID: {0}";
     public string Failed => "遊戲啟動失敗: {0}";
+}
+
+public class GameCommandCnTextCHT
+{
+    public string Desc => "寫入 hosts 並啟動特定渠道的用戶端";
+    public string Usage => "用法: /game-cn [額外遊戲參數]";
+    public string Started => "遊戲已啟動。PID: {0}";
+    public string Failed => "遊戲啟動失敗: {0}";
+    public string HostsUpdated => "已更新 hosts 檔案: {0}";
+    public string HostsCurrent => "hosts 已包含託管條目。";
+    public string HostsFailed => "寫入 hosts 失敗: {0}";
+    public string NeedAdmin => "寫入 hosts 需要管理員權限。請以管理員身分重新啟動伺服器, 或手動把下面這段加入 {0}:\n{1}";
+    public string Unsupported => "當前系統不支援自動維護 hosts。";
+}
+
+public class GameCommandHostsCleanTextCHT
+{
+    public string Desc => "移除 /game-cn 寫入 hosts 的託管段落";
+    public string Usage => "用法: /hosts-clean";
+    public string Removed => "已移除 hosts 中的託管段落, 並清空了 DNS 快取: {0}";
+    public string NothingToRemove => "hosts 裡沒有 MikuSB 的託管段落, 無需清理: {0}";
+    public string NeedAdmin => "清理 hosts 需要管理員權限, 請以管理員身份重新啟動服務端後再試: {0}";
+    public string Failed => "清理 hosts 失敗: {0}";
+    public string Unsupported => "當前系統不支援自動維護 hosts。";
 }
 
 #endregion

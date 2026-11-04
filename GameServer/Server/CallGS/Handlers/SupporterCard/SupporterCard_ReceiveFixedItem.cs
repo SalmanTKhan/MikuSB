@@ -24,7 +24,7 @@ public class SupporterCard_ReceiveFixedItem : CallGSHandler
 
         attr.Val %= (uint)fixedCfg.Num;
 
-        var rewardTemplateId = (uint)GameResourceTemplateId.FromGdpl(fixedCfg.Item);
+        var rewardTemplateId = GameResourceTemplateId.FromGdpl(fixedCfg.Item);
         var rewardItem = GameData.SuppliesData.GetValueOrDefault(rewardTemplateId);
         if (rewardItem == null)
         {

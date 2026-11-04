@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using MikuSB.Data;
 using MikuSB.Proto;
 using MikuSB.Util;
 
@@ -33,7 +32,6 @@ public class HandlerReqReconnect : Handler
             await connection.SendPacket(CmdIds.NtfLogout);
             return;
         }
-        if (!ResourceManager.IsLoaded) return;
         int uid = (int)req.Pid;
         var previous = Listener.GetActiveConnection(uid);
         if (previous != null && !ReferenceEquals(previous, connection)) previous.Stop();

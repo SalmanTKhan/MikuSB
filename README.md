@@ -5,7 +5,7 @@
 
 [Discord](https://discord.gg/6MvWY774hX)
 
-日本語のドキュメントは [README_jp.md](README_jp.md) にあります。
+[English](README.md) | [日本語](README_jp.md)
 
 ## Scam Warning
 
@@ -18,9 +18,10 @@ Request a refund immediately and report the seller to us on Discord with any rel
 - `SdkServer`
   - Serves HTTP APIs and dispatch responses
   - Returns server lists, version queries, and fallback responses
+  - Reports version `3.6.0` for that channel
 - `GameServer`
   - Accepts TCP-based game connections
-  - Handles `ReqCallGS` and some normal packets
+  - Handles `ReqCallGS` and the game packets behind the supported systems
 - `Proxy`
   - Listens on `127.0.0.1:18888` as a SOCKS5 proxy when enabled
   - Redirects some Snowbreak-related domains to the local `SdkServer`
@@ -49,37 +50,73 @@ See [local setup](docs/setup.md) for guided server and client setup, and [preser
 3. Start the server with `start-server.bat` or `sh start-server.sh`.
 4. For the Windows client, follow the runtime patch instructions in [local setup](docs/setup.md), then run `start-client.bat`.
 
+### Local overrides
+
+`Config/Config.json` is tracked by git, so keep machine-specific values (`GamePath`, `Arguments`, your LAN address) in `Config/Config.Local.json` instead. It is merged over `Config.json` at startup, and while it exists the server does not write back to `Config.json`.
+
+## Building a release package
+
+```powershell
+pwsh -File build.ps1
+```
+
+Produces `build/MikuSB-win-x64/`, `build/MikuSB-win-x64.zip` and `build/MikuSB-win-x64.zip.sha256`. Debug symbols are dropped by default, because a locally built assembly records the absolute build path; pass `-WithSymbols` if you need them. On a machine without access to nuget.org, restore from a local cache with `-Source <folder>,<folder> -NoReadyToRun`.
+
+## Running a specific channel
+
+This fork follows a specific channel of the client and carries fixes on top of upstream:
+
+- DLC activity and era progression, including the client-side Lua payloads the server has to push for activities the client time-gates on its own
+- Level-run settlement and per-difficulty clear counts for Defend, Repression and Rogue3D
+- Wider packet coverage across activity, quest and shop flows
+
+LAN / direct-host co-op was dropped. It is not part of this branch.
+
+That channel needs more than a normal login does:
+
+- **Client build 3.6.x.** The SDK handshake answers on channel `pc_jinshan` with SDK version `5.3.6`; newer builds of that channel need packet definitions this fork does not have.
+- **The old official launcher only.** The CN route was tested against the 3.6.0 launcher from the official jinshan channel; newer launchers change the login handshake and will not get through. The setup wizard labels the CN card with that version and links the installer (`RegionOption.LauncherUrl`), so the exact build is one click away instead of something to hunt for. It is a note, not a gate: the server does not check which launcher you use.
+- **The channel argument at launch.** The client only asks for a channel's SDK endpoints when `-ChannelID=jinshan` (CN) or `-channelid=seasun` (global) is on its command line, so the server cannot pick one for you: a fresh install ships `Loader.Arguments` with no channel at all, and `MikuSB.Loader` refuses to start the game until one is set. The admin panel's setup wizard writes the right one together with the region. Existing `Config.json` files that already carry a channel keep working, and `Loader.Region` wins when both are present.
+- **Seven HTTPS ports.** Besides `HttpServer.Port` (21500) the server binds six more (443, 11443, 13443, 18443, 19443, 31443), because that channel's SDK talks to several fixed endpoints that each sit on their own port. Port 443 has to be free. Ports are probed first: anything already taken is reported in the console and in a dialog, and the remaining ports still come up. Only one instance may run — a second one exits immediately instead of fighting over the ports.
+- **TLS.** Certificates are self-signed per host name and cached in `sdk-certs/`. If the profile refuses to import them, Kestrel logs `Failed to start the SDK/HTTP (dispatch) server` and login cannot finish.
+- **Local proxy or `hosts`.** With `Proxy.Enabled` and `Loader.SetAllProxy` (both on by default) the client's SDK traffic goes to `127.0.0.1:18888` and is forwarded to those ports; with the proxy off, map those endpoints to `127.0.0.1` yourself.
+- **Writing `hosts` needs an administrator.** The server keeps a fenced block there for as long as it runs (`Loader.ManageCnHosts`, on by default) and removes it on a clean shutdown; `/game-cn` writes the block, flushes the resolver cache and starts the client without injecting the patch DLL. Started unelevated, the command prints the block instead of writing it. If the server crashed or was killed and the block is still there, `/hosts-clean` in the console drops it, and `MikuSB --clean-hosts` does the same without starting the server (which would write the block again).
+- **Resources.** The first start downloads `dubstream3/MikuSB-Resource` into `Resources/`. It tries the direct GitHub URL once, then each mirror in `UpdateService.GitHubMirrors` in order; a source that cannot deliver 1 MB within 10 seconds is dropped and the next one is used, and every attempt logs its source, speed and progress. Override the archive with `MIKUSB_RESOURCE_ARCHIVE` and the mirror list (semicolon separated, each ending in `/`) with `MIKUSB_RESOURCE_MIRRORS`. Offline, put the files there by hand: `item/templates/card.json` and `item/templates/weapon.json` must exist or data loading stops.
+- **.NET 10 with the ASP.NET Core runtime.** The published zip is framework-dependent.
+
+The game server itself listens on `127.0.0.1:21000` (TCP).
+
 ## Feature List
 
 * [x] Login and basic account entry
-* [x] Player data loading
-* [x] Inventory loading
-* [x] Character loading
-* [x] Skin loading
-* [x] Weapon loading
-* [x] Lobby display character switching
-* [x] Character skin switching
-* [x] Character skin form switching
-* [x] Weapon replacement
-* [x] Weapon upgrade
-* [x] Player rename
-* [x] Basic saving of currently supported lobby state
-* [✓] Main chapter stage entry and related flow
-* [✓] Daily stage entry and related flow
-* [✓] Basic player setting synchronization
-* [✓] Basic profile synchronization
-* [✓] Activity-related requests
-* [✓] Achievement-related requests
-* [✓] Lineup-related requests
-* [✓] Preview-related requests
-* [✓] Some shop-related requests
-* [ ] Full combat flow
-* [ ] Mission / quest progression
-* [ ] Gacha / recruitment systems
-* [ ] Complete shop behavior
-* [ ] Multiplayer systems
-* [ ] Base / dorm systems
-* [ ] Full client API coverage
+* [x] Inventory
+* [x] Combat
+* [x] Character
+* [x] GM menu
+* [x] Weapons
+* [x] Support systems
+* [x] Apocalypse
+* [x] Actus
+* [x] Neuronics
+* [x] Character skins
+* [x] Weapon skins
+* [x] Gacha
+* [x] Main story chapters
+* [x] Dorm / base
+* [x] Mini-games
+* [x] Underground cleanup
+* [x] Neuron simulation
+* [x] Tactical assessment
+* [x] Episode stories
+* [x] Routine operations
+* [x] Paradox maze
+* [x] Lobby editing
+* [x] Planet exploration
+* [x] Dream picture book
+* [x] DLC activities and era progression
+* [ ] Multiplayer (LAN / direct-host co-op) — abandoned
+* [x] Shop
+* [x] Honor dispute
 
 ## Contributors
 - [Naruse](https://github.com/DevilProMT)

@@ -22,6 +22,25 @@ public readonly record struct QuestCompletionResult(int LevelCount, NtfSyncPlaye
 
 public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
 {
+    /// <summary>
+    /// A level id namespace for the shared (21, levelId) / (22, levelId) pair. The client reads both
+    /// groups through the same two constants (Launch.GID / Launch.GPASSID), so every mode that
+    /// settles a level ends up in the same id space and two modes can claim the same id.
+    /// </summary>
+    public enum SeedLevelType
+    {
+        Chapter,
+        Daily,
+        Role,
+        Tower,
+        TowerEvent,
+        VirCaptureTower,
+        DlcChapter,
+        SeasonBoss,
+        Defend,
+        DonoDuelArena
+    }
+
     private const uint LevelStateGroupId = AttrIds.Quest.LevelStateGid;
     private const uint LevelPassGroupId = AttrIds.Quest.LevelPassGid;
     private const uint SettlementSeedGroupId = AttrIds.Quest.SettlementSeedGid;
@@ -53,6 +72,150 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
 
             Player.Attributes.Remove(LevelStateGroupId, levelId);
         }
+    }
+
+    /// <summary>
+    /// Levels that an id can be claimed by when two modes share it, highest priority first. The id
+    /// spaces genuinely overlap in the shipped tables (chapter 1011-1495 against rogue3d science
+    /// levels, tower levels 3011-3035 against season boss, defend 7001-7027 against the timed
+    /// mode), and the client reads one attribute pair per id, so a single type has to own the value.
+    /// The types listed here are the ones the server can actually settle; the unmodelled modes win
+    /// nothing and are left alone rather than overwritten with a state the client never expects.
+    /// </summary>
+    private static readonly SeedLevelType[] SeedPriority =
+    [
+        SeedLevelType.DlcChapter,
+        SeedLevelType.SeasonBoss,
+        SeedLevelType.Tower,
+        SeedLevelType.TowerEvent,
+        SeedLevelType.VirCaptureTower,
+        SeedLevelType.DonoDuelArena,
+        SeedLevelType.Daily,
+        SeedLevelType.Role,
+        SeedLevelType.Defend,
+        SeedLevelType.Chapter
+    ];
+
+    /// <summary>
+    /// Every level id the server knows how to describe, tagged with the mode that claims it. Only
+    /// the tables the server has a resource class for are listed: the other modes the client reads
+    /// (rogue, repression, online boss, timed mode, alien defense, bag rogue, element tower,
+    /// girl rush, farm war...) have no [ResourceEntity] class yet, so their ids cannot be recovered
+    /// here and their state stays whatever the client last reported.
+    /// </summary>
+    private static IEnumerable<(SeedLevelType LevelType, uint LevelId)> GetSeedableLevels()
+    {
+        foreach (var levelId in GameData.ChapterLevelData.Keys)
+            yield return (SeedLevelType.Chapter, levelId);
+
+        foreach (var levelId in GameData.DailyLevelData.Keys)
+            yield return (SeedLevelType.Daily, levelId);
+
+        foreach (var levelId in GameData.RoleLevelData.Keys)
+            yield return (SeedLevelType.Role, levelId);
+
+        foreach (var levelId in GameData.TowerLevelData.Keys)
+            yield return (SeedLevelType.Tower, levelId);
+
+        foreach (var levelId in GameData.TowerEventLevelData.Keys)
+            yield return (SeedLevelType.TowerEvent, levelId);
+
+        foreach (var levelId in GameData.VirCaptureTowerData.Keys)
+            yield return (SeedLevelType.VirCaptureTower, levelId);
+
+        foreach (var levelId in GameData.DlcChapterLevelData.Keys)
+            yield return (SeedLevelType.DlcChapter, levelId);
+
+        foreach (var levelId in GameData.SeasonBossLevelData.Keys)
+            yield return (SeedLevelType.SeasonBoss, levelId);
+
+        foreach (var levelId in GameData.DefendLevelData.Keys)
+            yield return (SeedLevelType.Defend, levelId);
+
+        // DonoDuel arena levels (donoduel_arena_battle.json, 5505..5518) are deliberately NOT seeded.
+        // The story tab draws its "cleared" tick from me:GetAttribute(Launch.GPASSID = 22, levelId)
+        // (uw_donoduel_arena_level_st.lua:75 -> DonoDuelArena.lua:80 IsPass), so seeding the pass count
+        // marked every story level as cleared - including the ones the player had never fought. Their
+        // real clears are written by DonoDuelArenaSettlement.cs, and access to a story level is gated by
+        // its DonoDuel story mission condition, not by the pass count.
+    }
+
+    /// <summary>
+    /// Resolves each shared level id to the mode that owns it. Rogue3D science levels are excluded
+    /// on purpose: they collide with 40 chapter ids and the client has no (21, id) consumer for
+    /// them, so letting them win would blank out real chapter stars.
+    /// </summary>
+    private static IReadOnlyDictionary<uint, SeedLevelType> ResolveSeedOwners()
+    {
+        var rank = new Dictionary<SeedLevelType, int>();
+        for (var i = 0; i < SeedPriority.Length; i++)
+            rank[SeedPriority[i]] = i;
+
+        var owners = new Dictionary<uint, SeedLevelType>();
+        foreach (var (levelType, levelId) in GetSeedableLevels())
+        {
+            // AlienDefenseExcel registers activity ids rather than level ids, and a handful of rows
+            // convert to id 0; neither is a level the client can look up.
+            if (levelId == 0)
+                continue;
+
+            if (!owners.TryGetValue(levelId, out var current) || rank[levelType] < rank[current])
+                owners[levelId] = levelType;
+        }
+
+        return owners;
+    }
+
+    /// <summary>
+    /// Bit pattern the client expects for a cleared level. The star bits are per-level flags read
+    /// through GetBits (RoleLevel.lua:38-82 DidGotStar / CountGotStar); bit 8 is the "story level
+    /// watched" / "daily cleared" flag the settlement handlers set as well
+    /// (DlcChapterSettlement.cs, TowerEventChapter_LevelSettlement.cs).
+    /// </summary>
+    private static uint SeedState(SeedLevelType levelType) => levelType switch
+    {
+        SeedLevelType.Daily => LevelStarMask | 0b1111_1000u,
+        SeedLevelType.Tower => LevelStarMask | 0b0011_1000u,
+        SeedLevelType.TowerEvent or SeedLevelType.VirCaptureTower => LevelStarMask | 0b0001_1000u,
+        SeedLevelType.DlcChapter => LevelStarMask | 0b1111_1000u,
+        _ => LevelStarMask
+    };
+
+    /// <summary>
+    /// Writes a real, persisted clear state for every level the server models. This is what makes
+    /// the completion UI correct on the first frame of a login instead of after the player happens
+    /// to clear something: PlayerAttributes.SyncTo(Proto.Player) only walks the stored attributes,
+    /// so a value that is merely injected into a sync packet never reaches the saved player data.
+    /// Lower existing values are raised, never lowered, and an existing pass count is kept.
+    /// </summary>
+    public int SeedAllLevelStates()
+    {
+        var owners = ResolveSeedOwners();
+        var seeded = 0;
+
+        foreach (var (levelId, levelType) in owners)
+        {
+            var state = Player.Attributes.Get(LevelStateGroupId, levelId);
+            if (state == null)
+            {
+                Player.Attributes.Set(LevelStateGroupId, levelId, SeedState(levelType));
+                seeded++;
+            }
+            else if (state.Val < SeedState(levelType))
+            {
+                state.Val = SeedState(levelType);
+                seeded++;
+            }
+
+            var pass = Player.Attributes.Get(LevelPassGroupId, levelId);
+            if (pass == null)
+            {
+                Player.Attributes.Set(LevelPassGroupId, levelId, 1);
+                seeded++;
+            }
+        }
+
+        return seeded;
     }
 
     public void MigrateChapterStarAwardMasks()
@@ -94,6 +257,13 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             Player.Data.CompleteAllQuestLevels = completed;
             if (completed)
             {
+                // Turn the flag into real stored attributes as well: the login snapshot only
+                // serialises PlayerGameData.Attrs, so a sync-only override was lost the moment the
+                // player reconnected (and the UI came back locked until some level was cleared).
+                var seeded = SeedAllLevelStates();
+                if (seeded > 0)
+                    DatabaseHelper.SaveDatabaseType(Player.Data);
+
                 SyncTestingStateTo(sync);
             }
             else
@@ -398,8 +568,14 @@ public class QuestManager(PlayerInstance player) : BasePlayerManager(player)
             : LevelStarMask;
     }
 
-    private uint GetPassCount(uint levelId) =>
-        allLevelsCompletedForTesting ? 1 : Player.Attributes.GetValue(LevelPassGroupId, levelId);
+    private uint GetPassCount(uint levelId)
+    {
+        var stored = Player.Attributes.GetValue(LevelPassGroupId, levelId);
+
+        // The testing flag still forces "cleared" for the levels whose stored value has not been
+        // seeded yet, so /quest complete_all keeps working while seeding takes over the rest.
+        return allLevelsCompletedForTesting && stored == 0 ? 1 : stored;
+    }
 
     private uint GetLevelState(QuestLevelType levelType, uint levelId)
     {

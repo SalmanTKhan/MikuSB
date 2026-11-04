@@ -102,7 +102,7 @@ public class Item_Recycle : CallGSHandler<ItemRecycleParam>
         {
             case ItemTypeEnum.TYPE_SUPPLIES:
             {
-                var templateId = (uint)GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
+                var templateId = GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
                 if (!GameData.SuppliesData.TryGetValue(templateId, out var supplies)) break;
                 var item = await player.InventoryManager.AddSuppliesItem(supplies, count, sendPacket: false);
                 if (item != null) sync.Items.Add(item.ToProto());

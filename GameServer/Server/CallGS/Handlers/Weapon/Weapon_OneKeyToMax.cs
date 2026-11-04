@@ -147,6 +147,15 @@ public class Weapon_OneKeyToMax : CallGSHandler<OneKeyToMaxParam>
         var sync = new NtfSyncPlayer();
         sync.Items.AddRange(syncItems);
 
+        // Same part award hook as Weapon_Upgrade: the one key button can be the call that passes
+        // the award unlock level, and the client only offers the claim once attribute 112 says so.
+        var awardUnlockLevel = WeaponPartAward.GetAwardUnlockLevel(config, targetTemplate.BreakLimitId);
+        if (awardUnlockLevel > 0 && weapon.Level >= awardUnlockLevel &&
+            WeaponPartAward.MarkUnlocked(player, weapon.TemplateId, sync))
+        {
+            DatabaseHelper.SaveDatabaseType(player.Data);
+        }
+
         return Task.FromResult(CallGSResult.Ok($"{{\"bMaxUnLock\":{(bMaxUnlock ? "true" : "false")}}}", sync));
     }
 

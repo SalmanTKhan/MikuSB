@@ -51,7 +51,7 @@ public class SupporterCard_Upgrade : CallGSHandler<SupporterCardUpgradeParam>
             var scExcel = GameData.SupportCardData.FirstOrDefault(x => x.TemplateId == item.TemplateId);
             if (scExcel != null)
                 provideExp = scExcel.ProvideExp;
-            else if (GameData.SuppliesData.TryGetValue((uint)item.TemplateId, out var supExcel))
+            else if (GameData.SuppliesData.TryGetValue(item.TemplateId, out var supExcel))
                 provideExp = supExcel.ProvideExp;
             gainedExp += provideExp * (uint)mat.Num;
 

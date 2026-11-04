@@ -10,11 +10,19 @@ namespace MikuSB.GameServer.Server.Packet.Send.Misc;
 
 public class PacketNtfCallScript : BasePacket
 {
+    // Every constructor below is a pure sync packet: the payload lives in ExtraSync and there is no
+    // script to run. The client's native NtfScript handler still calls s2c.Dispatch(Api, Arg), so an
+    // empty Api made Misc/S2C.lua:32 raise "s2c.Dispatch error. No command named: " on every
+    // login/reconnect. Answer with a name the client registers as an empty no-op
+    // (Achievement/Achievement_Extend.lua:347) so the dispatch succeeds and ExtraSync is still
+    // applied.
+    private const string SyncApi = "AchievementExtend_RefreshPopFlag";
+
     public PacketNtfCallScript(List<CharacterInfo> characters) : base(CmdIds.NtfScript)
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}",
             ExtraSync = new NtfSyncPlayer
             {
@@ -29,7 +37,7 @@ public class PacketNtfCallScript : BasePacket
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}",
             ExtraSync = new NtfSyncPlayer
             {
@@ -44,7 +52,7 @@ public class PacketNtfCallScript : BasePacket
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}",
             ExtraSync = new NtfSyncPlayer
             {
@@ -59,7 +67,7 @@ public class PacketNtfCallScript : BasePacket
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}",
             ExtraSync = new NtfSyncPlayer
             {
@@ -74,7 +82,7 @@ public class PacketNtfCallScript : BasePacket
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}",
             ExtraSync = new NtfSyncPlayer
             {
@@ -89,7 +97,7 @@ public class PacketNtfCallScript : BasePacket
     {
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}"
         };
 
@@ -107,7 +115,7 @@ public class PacketNtfCallScript : BasePacket
         Player.BuildPlayerAttr(true);
         var proto = new NtfCallScript
         {
-            Api = "",
+            Api = SyncApi,
             Arg = "{}"
         };
         var sync = new NtfSyncPlayer();

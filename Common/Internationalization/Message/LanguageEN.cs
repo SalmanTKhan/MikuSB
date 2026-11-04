@@ -36,6 +36,8 @@ public class ServerTextEN
 public class WordTextEN
 {
     public string Furniture => "Furniture";
+    public string Girl => "character";
+    public string GirlPiece => "character fragment";
     public string Skin => "Skin";
     public string WeaponPart => "Weapon Part";
     public string CallItem => "Call Item";
@@ -92,6 +94,8 @@ public class CommandTextEN
     public GiveAllTextEN GiveAll { get; } = new();
     public DebugTextEN Debug { get; } = new();
     public GameCommandTextEN Game { get; } = new();
+    public GameCommandCnTextEN GameCn { get; } = new();
+    public GameCommandHostsCleanTextEN HostsClean { get; } = new();
 }
 
 #endregion
@@ -145,6 +149,63 @@ public class ServerInfoTextEN
         "You cannot enter the game yet. Please wait for all items to load before trying again";
 
     public string UnhandledException => "An unhandled exception occurred: {0}";
+
+    public string CurrentLanguage => "Current language: {0}";
+    public string BuildVersion => "Build version: {0}";
+    public string RequiredResourcesMissing => "Required resources are missing. Downloading the resource package.";
+    public string InstallingResources => "Installing resources into {0}...";
+    public string ResourcesInstalled => "Installed {0} resource files into {1}.";
+    /// <summary>Resource data version changed ({0} -> {1}); downloading the package again.</summary>
+    public string ResourcesOutdated => "Resource data version changed ({0} -> {1}); downloading the package again.";
+    public string DownloadSourceDirect => "Download source: {0} (direct GitHub)";
+    public string DownloadSourceMirror => "Download source: {2} (mirror {0}/{1}); the direct source failed, switched automatically";
+    public string DownloadProgress => "Download {0}% ({1}/{2}), {3}, {4} left, from {5}";
+    public string Unknown => "unknown";
+    public string DownloadedItem => "Downloaded {0} from {1}.";
+    public string DownloadedThroughMirror => "Downloaded {0} through mirror {1} because the direct GitHub source failed.";
+    public string DownloadSourceFailed => "Download source {0} failed ({1}), trying the next source...";
+    public string DownloadSourceFailedAll => "Download source {0} failed ({1}), no sources left.";
+    public string SlowSourceFallback => "No source held {0}; keeping {1}, the one that got furthest ({2} in {3} at {4}). The network is slow, so this download will take longer than usual.";
+    public string DownloadStalled => "{0} delivered only {2} in {1}s, below the {3} floor";
+    public string DownloadNoResponse => "{0} sent no response headers within {1}s";
+    public string DownloadTimedOut => "{0} took longer than {1}s to finish";
+    public string DownloadNoData => "{0} returned no data.";
+    public string ConfirmUpdate => "New version found: {0} -> {1}. Update now? [Y/n]: ";
+    public string AntiScamSeparator => "============================================================";
+    public string AntiScamFree => "MikuSB is completely free and open source.";
+    public string AntiScamScam => "If you paid anyone for this server, you were scammed.";
+    public string AntiScamRefund => "Request a refund immediately and report the seller to us.";
+    public string AntiScamDiscord => "Discord: https://discord.gg/aMwCu9JyUR";
+
+    public string HostsDisabled => "Hosts maintenance is disabled in the loader options.";
+    public string HostsSkipped => "Hosts maintenance skipped: the configured launch channel is not the specific one.";
+    public string HostsApplied => "Pointed the specific-channel host names at this machine ({0}).";
+    public string HostsNotElevated =>
+        "Cannot update the hosts file without administrator rights. Run the server elevated, or use /game-cn there to print the block.";
+    public string HostsFailed => "Failed to update the hosts file: {0}";
+    public string HostsReleased => "Removed the managed hosts block.";
+    public string HostsRestoreFailed => "Failed to restore the hosts file: {0}";
+    public string HostsNothingToRemove => "The hosts file has no managed block to remove.";
+    public string HostsCleanElevated =>
+        "Cleaning the hosts file needs administrator rights. Run MikuSB elevated and try again.";
+    public string HostsCleanUnsupported => "Managing the hosts file is not supported on this system.";
+
+    public string AutoUpdateSkippedNotConfigured =>
+        "Auto update skipped because the GitHub release source is not configured.";
+    public string AutoUpdateSkippedNoUpdater => "Auto update skipped because MikuSB.Updater.exe was not found.";
+    public string CurrentBuildVersion => "Current build version: {0}";
+    public string LatestReleaseMissingAsset => "Latest release {0} does not contain asset {1}.";
+    public string SkippedUpdateByUser => "Skipped update {0} by user choice.";
+    public string DownloadingUpdate => "Downloading update {0}.";
+    public string DownloadingResourcePackage => "Downloading resource package.";
+    public string FailedToStartUpdater => "Failed to start MikuSB.Updater.exe.";
+    public string UpdateHandedOver => "Update {0} found. Handing over to updater and shutting down.";
+    public string AutoUpdateCheckFailed => "Auto update check failed. Continuing normal startup.";
+    public string LatestReleaseNotAccessible =>
+        "Latest GitHub release is not accessible. This is expected while the repository remains private.";
+    public string ReleaseLookupFailed => "Release lookup via {0} failed ({1}). Trying the next source.";
+    public string ProxyListening => "MikuSB SOCKS5 proxy listening on {0}:{1}";
+    public string ProxyDisabled => "MikuSB proxy is disabled.";
 }
 
 #endregion
@@ -236,7 +297,9 @@ public class GiveAllTextEN
                            "Usage: /giveall profile <detail/-1> -g<genre> -p<particular> -l<level>" +
                            "Usage: /giveall skinpart <detail/-1> -g<genre> -p<particular> -l<level>" +
                            "Usage: /giveall weaponpart <detail/-1> -g<genre> -p<particular> -l<level>" +
-                           "Usage: /giveall call <detail/-1> -g<genre> -p<particular> -l<level>";
+                           "Usage: /giveall call <detail/-1> -g<genre> -p<particular> -l<level>\n" +
+                           "Usage: /giveall piece <detail/-1> -p<particular> -c<count>\n" +
+                           "Usage: /giveall girl <detail/-1> -p<particular>";
     public string NotFound => "{0} not found!";
     public string GiveAllItems => "Added {0} {1} to player!";
 }
@@ -262,6 +325,30 @@ public class GameCommandTextEN
     public string Usage => "Usage: /game [extra game args]";
     public string Started => "Game launched. PID: {0}";
     public string Failed => "Failed to launch game: {0}";
+}
+
+public class GameCommandCnTextEN
+{
+    public string Desc => "Launch the specific-channel client with the hosts records managed";
+    public string Usage => "Usage: /game-cn [extra game args]";
+    public string Started => "Game launched. PID: {0}";
+    public string Failed => "Failed to launch game: {0}";
+    public string HostsUpdated => "Updated the hosts file: {0}";
+    public string HostsCurrent => "The hosts file already contains the managed block.";
+    public string HostsFailed => "Failed to update the hosts file: {0}";
+    public string NeedAdmin => "Writing the hosts file needs administrator rights. Restart the server elevated, or add this block to {0} by hand:\n{1}";
+    public string Unsupported => "Managing the hosts file is not supported on this system.";
+}
+
+public class GameCommandHostsCleanTextEN
+{
+    public string Desc => "Remove the hosts block written by /game-cn";
+    public string Usage => "Usage: /hosts-clean";
+    public string Removed => "Removed the managed hosts block and flushed the DNS cache: {0}";
+    public string NothingToRemove => "The hosts file has no managed block to remove: {0}";
+    public string NeedAdmin => "Cleaning the hosts file needs administrator rights. Restart the server elevated and try again: {0}";
+    public string Failed => "Failed to clean the hosts file: {0}";
+    public string Unsupported => "Managing the hosts file is not supported on this system.";
 }
 
 #endregion

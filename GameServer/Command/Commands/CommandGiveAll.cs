@@ -1,5 +1,6 @@
-﻿using MikuSB.Data;
+using MikuSB.Data;
 using MikuSB.Database;
+using MikuSB.Database.Character;
 using MikuSB.Database.Inventory;
 using MikuSB.Enums.Item;
 using MikuSB.Enums.Player;
@@ -349,5 +350,85 @@ public class CommandGiveAll : ICommands
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
         await arg.SendMsg(I18NManager.Translate("Game.Command.GiveAll.GiveAllItems",
             I18NManager.Translate("Word.Furniture"), furnitureItems.Count.ToString()));
+    }
+
+    /// <summary>
+    /// 角色卡：新号不再一上来就全给，缺谁用这个补。碎片走 /giveall piece，两者是同一张卡的两条路径。
+    /// </summary>
+    [CommandMethod("girl")]
+    public async ValueTask GiveAllGirl(CommandArg arg)
+    {
+        if (!await arg.CheckOnlineTarget()) return;
+
+        var detail = arg.GetInt(0);
+        var particular = await arg.GetOption('p') is int particularOpt ? particularOpt : (int?)null;
+        var player = arg.Target!.Player!;
+        List<CharacterInfo> girlItems = [];
+        foreach (var card in GameData.CardData.Values)
+        {
+            if (detail != -1 && card.Detail != (uint)detail) continue;
+            if (particular is not null && card.Particular != (uint)particular.Value) continue;
+
+            var character = await player.CharacterManager!
+                .AddCharacter(ItemTypeEnum.TYPE_CARD, card.Detail, card.Particular, card.Level, 1, false);
+            if (character != null) girlItems.Add(character);
+        }
+        if (girlItems.Count == 0)
+        {
+            await arg.SendMsg(I18NManager.Translate("Game.Command.GiveAll.NotFound", I18NManager.Translate("Word.Girl")));
+            return;
+        }
+        await player.SendPacket(new PacketNtfCallScript(girlItems));
+        await player.SendPacket(new PacketNtfCallScript(player));
+        DatabaseHelper.SaveDatabaseType(player.CharacterManager.CharacterData);
+        DatabaseHelper.SaveDatabaseType(player.Data);
+        await arg.SendMsg(I18NManager.Translate("Game.Command.GiveAll.GiveAllItems",
+            I18NManager.Translate("Word.Girl"), girlItems.Count.ToString()));
+    }
+
+    /// <summary>
+    /// 角色碎片：item/templates/suplies.json 里的 supplies.piecesNNN，GDPL 固定为 (5,4,角色号,版本号)。
+    /// 客户端商店读的是它自己 pak 里的商品表，服务端新加的商品 id 它不认识，所以 girl044（芙提雅-炬芯）
+    /// 这种数据里缺碎片入口的角色只能从这里补：/giveall piece 4 -p4 -c60，再走 GirlCard_UnLockCharacter。
+    /// </summary>
+    [CommandMethod("piece")]
+    public async ValueTask GiveAllGirlPiece(CommandArg arg)
+    {
+        if (!await arg.CheckOnlineTarget()) return;
+
+        var detail = arg.GetInt(0);
+        var particular = await arg.GetOption('p') is int particularOpt ? particularOpt : 1;
+        var count = await arg.GetOption('c') is int countOpt && countOpt > 0 ? countOpt : 60;
+
+        var player = arg.Target!.Player!;
+        List<BaseGameItemInfo> pieceItems = [];
+        if (detail == -1)
+        {
+            // add all
+            foreach (var config in GameData.SuppliesData.Values)
+            {
+                if (config.Genre != 5 || config.Detail != 4)
+                    continue;
+
+                var piece = await player.InventoryManager!.AddSuppliesItem(config, (uint)count, false);
+                if (piece != null) pieceItems.Add(piece);
+            }
+        }
+        else
+        {
+            var templateId = GameResourceTemplateId.FromGdpl(5, (uint)detail, (uint)particular, 1);
+            if (!GameData.SuppliesData.TryGetValue(templateId, out var config))
+            {
+                await arg.SendMsg(I18NManager.Translate("Game.Command.GiveAll.NotFound", I18NManager.Translate("Word.GirlPiece")));
+                return;
+            }
+
+            var piece = await player.InventoryManager!.AddSuppliesItem(config, (uint)count, false);
+            if (piece != null) pieceItems.Add(piece);
+        }
+        if (pieceItems.Count > 0) await player.SendPacket(new PacketNtfCallScript(pieceItems));
+        DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
+        await arg.SendMsg(I18NManager.Translate("Game.Command.GiveAll.GiveAllItems",
+            I18NManager.Translate("Word.GirlPiece"), pieceItems.Count.ToString()));
     }
 }

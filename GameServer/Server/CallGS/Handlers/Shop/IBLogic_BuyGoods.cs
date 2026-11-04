@@ -205,7 +205,7 @@ public class IBLogic_BuyGoods : CallGSHandler<IbBuyGoodsParam>
                 break;
             case ItemTypeEnum.TYPE_SUPPLIES:
             {
-                var templateId = (uint)GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
+                var templateId = GameResourceTemplateId.FromGdpl(reward[0], detail, particular, level);
                 if (!GameData.SuppliesData.TryGetValue(templateId, out var supplies))
                     break;
 

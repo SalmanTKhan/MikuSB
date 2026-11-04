@@ -99,6 +99,38 @@ internal static class HouseJson
         }
         return 0;
     }
+
+    /// <summary>Tolerant boolean read: the client sends Lua true/false, but "1" and 1 also occur.</summary>
+    internal static bool BoolField(JsonObject? obj, string name)
+    {
+        if (obj?[name] is not JsonValue value)
+            return false;
+        if (value.TryGetValue<bool>(out var flag))
+            return flag;
+        if (value.TryGetValue<string>(out var text))
+            return text is "true" or "1";
+        return ToInt(value) != 0;
+    }
+
+    /// <summary>
+    /// Copies a request back (the client reads its own fields out of the reply) and renames FuncName to a
+    /// name the client actually dispatches. Equivalent to <see cref="HouseRequestScript.Synthesize"/>
+    /// (HouseShared.cs:30-46) but with an explicit reply name instead of the rename table — needed by the
+    /// house mini-games, whose request name and reply name differ without being in FuncNameMap.
+    /// </summary>
+    internal static JsonObject EchoReply(JsonObject request, string replyFuncName)
+    {
+        var rsp = new JsonObject();
+        foreach (var pair in request)
+        {
+            if (pair.Key is "FuncName" or "tblog")
+                continue;
+            rsp[pair.Key] = pair.Value?.DeepClone();
+        }
+
+        rsp["FuncName"] = replyFuncName;
+        return rsp;
+    }
 }
 
 internal static class HouseAttr

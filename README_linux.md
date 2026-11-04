@@ -1,5 +1,7 @@
 # MikuSB on Linux and Proton
 
+[English](README.md) | [日本語](README_jp.md)
+
 The Linux server can be started from source. A user reported that the original client connected to a remote VPS on Steam Deck using the redirect described below. Other Proton installations still need validation. Proxy environment variables do not guarantee that the game's SDK and game sockets use the proxy.
 
 ## Choose the setup that matches your server

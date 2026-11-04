@@ -1,5 +1,6 @@
 using MikuSB.Data;
 using MikuSB.Database;
+using MikuSB.Database.Player;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.Proto;
 using System.Text.Json;
@@ -96,25 +97,37 @@ public class GirlSpine_ChildUnLock : CallGSHandler<ChildUnLockParam>
         var cardParticular = (uint)((card.TemplateId >> 32) & 0xFFFF);
 
         // Build and persist StrAttr JSON: { "<particular>": { "ns": mastIdx, "tbn": [0,0], "tbr": [] } }
-        UpdateSpineStrAttr(player, cardDetail, cardParticular, mastIdx);
+        var strAttr = UpdateSpineStrAttr(player, cardDetail, cardParticular, mastIdx);
 
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
         DatabaseHelper.SaveDatabaseType(player.CharacterManager.CharacterData);
         DatabaseHelper.SaveDatabaseType(player.Data);
 
-        // Send NtfSetStrAttr so client's GetStrAttribute(30, Detail) returns fresh data
-        var strAttrData = GetSpineStrAttrJson(player, cardDetail);
-        var ntfStrAttr = new NtfSetStrAttr { Gid = SpineStrAttrGid, Sid = cardDetail, Val = strAttrData };
-        await context.Connection.Player!.SendPacket(CmdIds.NtfSetStrAttr, ntfStrAttr);
-
         var sync = new NtfSyncPlayer();
         sync.Items.AddRange(syncItems);
+
+        // Push the blob on every channel the client can learn it from - the reply's own sync plus the
+        // attribute notifications (see GirlCard_ReceiveProLevelAward for the reasoning). The panel's
+        // "通导中" node reads ns through the client's cached copy of GetStrAttribute(30, Detail)
+        // (Item/Spine.lua:103-107, 110-123), so a store that is not refreshed keeps showing the
+        // previous stage.
+        player.Attributes.SyncTo(sync, strAttr);
+
+        var strSync = new NtfSyncPlayer();
+        player.Attributes.SyncTo(strSync, strAttr);
+        await player.SendPacket(CmdIds.NtfSyncAttr, strSync);
+        await player.SendPacket(CmdIds.NtfSetStrAttr, new NtfSetStrAttr
+        {
+            Gid = SpineStrAttrGid,
+            Sid = cardDetail,
+            Val = strAttr.Val
+        });
 
         var rsp = $"{{\"tb\":{{\"D\":{cardDetail},\"pId\":{req.CardId},\"MastIdx\":{mastIdx},\"SubIdx\":{subIdx}}}}}";
         return CallGSResult.Ok(rsp, sync);
     }
 
-    private static void UpdateSpineStrAttr(PlayerInstance player, uint detail, uint particular, int mastIdx)
+    private static PlayerStrAttr UpdateSpineStrAttr(PlayerInstance player, uint detail, uint particular, int mastIdx)
     {
         var existing = player.Attributes.GetString(SpineStrAttrGid, detail);
         var raw = existing?.Val ?? "{}";
@@ -129,13 +142,7 @@ public class GirlSpine_ChildUnLock : CallGSHandler<ChildUnLockParam>
         entry.Ns = mastIdx;
         root[key] = entry;
 
-        player.Attributes.SetString(SpineStrAttrGid, detail, JsonSerializer.Serialize(root));
-    }
-
-    private static string GetSpineStrAttrJson(PlayerInstance player, uint detail)
-    {
-        var existing = player.Attributes.GetString(SpineStrAttrGid, detail);
-        return existing?.Val ?? "{}";
+        return player.Attributes.SetString(SpineStrAttrGid, detail, JsonSerializer.Serialize(root));
     }
 }
 

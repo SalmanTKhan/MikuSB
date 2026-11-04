@@ -25,6 +25,38 @@ public class MikuSB
 
     public static async Task Main(string[] args)
     {
+        try
+        {
+            await RunAsync(args);
+        }
+        catch (Exception exception)
+        {
+            // Everything below runs before the server is usable, so a throw here is a startup failure the
+            // user must be able to read: double-clicking in Explorer closes the console together with the
+            // process, and the stack trace goes with it. CrashReporter writes logs\crash-*.log and pops a
+            // dialog that names the likely cause.
+            Environment.ExitCode = CrashReporter.Report(exception, "startup");
+        }
+    }
+
+    private static async Task RunAsync(string[] args)
+    {
+        if (TryCleanHostsFromCommandLine())
+            return;
+
+        // Two servers cannot share the seven SDK ports or the admin panel, and the loser used to die later with an
+        // opaque "failed to start the dispatch server". Refuse the second copy up front and say why.
+        if (!SingleInstance.TryAcquire(TimeSpan.FromSeconds(3)))
+        {
+            const string alreadyRunning =
+                "MikuSB 已经在运行，请先关闭那个窗口（或结束 MikuSB.exe 进程）再启动。\n\n" +
+                "MikuSB is already running. Close the other instance first.";
+            Console.Error.WriteLine(alreadyRunning);
+            DesktopNotice.ShowError("MikuSB", alreadyRunning);
+            Environment.ExitCode = 1;
+            return;
+        }
+
         var time = DateTime.Now;
         IConsole.InitConsole();
         LoaderManager.InitConfig();
@@ -33,6 +65,7 @@ public class MikuSB
             return;
 
         RegisterExitEvent();
+        LoaderManager.InitCnHosts();
         LoaderManager.InitPacket();
 
         await LoaderManager.InitDatabase();
@@ -69,14 +102,56 @@ public class MikuSB
         await ProcessExit(Volatile.Read(ref _exitCode));
     }
 
+    /// <summary>
+    ///     <c>MikuSB --clean-hosts</c> drops the hosts block and exits without starting the server, because
+    ///     starting it would write the block straight back. This is the way out when the server crashed,
+    ///     was killed, or refuses to boot with the redirect still in place. It writes to stdout instead of
+    ///     going through <see cref="Logger" />: the logger redraws the input line and would throw as soon as
+    ///     the output is redirected.
+    /// </summary>
+    private static bool TryCleanHostsFromCommandLine()
+    {
+        if (!Environment.GetCommandLineArgs()
+                .Any(argument => argument.Equals("--clean-hosts", StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        I18NManager.LoadLanguage(ConfigManager.PeekLanguage(), announce: false);
+
+        if (!HostsFileService.IsSupported)
+        {
+            Console.WriteLine(I18NManager.Translate("Server.ServerInfo.HostsCleanUnsupported"));
+            return true;
+        }
+
+        var result = HostsFileService.Restore();
+        switch (result.Status)
+        {
+            case HostsSyncStatus.Applied:
+                HostsFileService.FlushDnsCache();
+                Console.WriteLine(I18NManager.Translate("Server.ServerInfo.HostsReleased"));
+                break;
+            case HostsSyncStatus.AlreadyCurrent:
+                Console.WriteLine(I18NManager.Translate("Server.ServerInfo.HostsNothingToRemove"));
+                break;
+            case HostsSyncStatus.NotElevated:
+                Console.WriteLine(I18NManager.Translate("Server.ServerInfo.HostsCleanElevated"));
+                break;
+            default:
+                Console.WriteLine(I18NManager.Translate("Server.ServerInfo.HostsRestoreFailed", result.Detail));
+                break;
+        }
+
+        return true;
+    }
+
     private static void ShowAntiScamWarning()
     {
-        Logger.Warn("============================================================");
-        Logger.Warn("MikuSB is completely free and open source.");
-        Logger.Warn("If you paid anyone for this server, you were scammed.");
-        Logger.Warn("Request a refund immediately and report the seller to us.");
-        Logger.Warn("Discord: https://discord.gg/aMwCu9JyUR");
-        Logger.Warn("============================================================");
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamSeparator"));
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamFree"));
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamScam"));
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamRefund"));
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamDiscord"));
+        Logger.Warn(I18NManager.Translate("Server.ServerInfo.AntiScamSeparator"));
     }
 
     #region Exit
@@ -112,6 +187,8 @@ public class MikuSB
 
     private static async Task ProcessExit(int exitCode)
     {
+        LoaderManager.ReleaseCnHosts();
+
         SocketListener.Connections.Values.ToList().ForEach(x => x.Stop(true));
 
         SocketListener.StopListener();
