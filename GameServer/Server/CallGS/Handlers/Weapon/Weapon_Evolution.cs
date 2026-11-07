@@ -26,6 +26,15 @@ public class Weapon_Evolution : CallGSHandler<WeaponEvolutionParam>
             return Task.FromResult(CallGSResult.Ok("\"error.BadParam\""));
         }
 
+        // The weapon cannot feed itself, and an equipped weapon must not vanish from its holder.
+        if ((uint)req.MaterialId == weapon.UniqueId ||
+            player.CharacterManager.CharacterData.Characters.Any(x => x.WeaponUniqueId == (uint)req.MaterialId) ||
+            (player.InventoryManager.InventoryData.Weapons.TryGetValue((uint)req.MaterialId, out var candidate) &&
+             candidate.EquipAvatarId != 0))
+        {
+            return Task.FromResult(CallGSResult.Ok("\"tip.not_material\""));
+        }
+
         var syncItems = new List<Item>();
 
         // Material can be a weapon or a regular item

@@ -54,6 +54,23 @@ public class GirlCard_UpByBreak : CallGSHandler<GirlCardUpByBreakParam>
             return Task.FromResult(CallGSResult.Error("tip.not_material_for_break"));
         }
 
+        // The client picks one of the level's cost options, so the request must fully pay at least one of them.
+        var cardTemplate = GameData.CardData.Values.FirstOrDefault(x =>
+            GameResourceTemplateId.FromGdpl(x.Genre, x.Detail, x.Particular, x.Level) == card.TemplateId);
+        if (cardTemplate == null || !GameData.CardBreakData.TryGetValue(cardTemplate.BreakMatID, out var costs))
+        {
+            return Task.FromResult(CallGSResult.Error("error.BadParam"));
+        }
+
+        var paysOption = costs.GetOptions(req.BreakLv).Any(option => option
+            .Where(row => row.Count >= 5 && row[4] > 0)
+            .GroupBy(row => GameResourceTemplateId.FromGdpl((uint)row[0], (uint)row[1], (uint)row[2], (uint)row[3]))
+            .All(rows => requestedMaterials.GetValueOrDefault(rows.Key) >= (uint)rows.Sum(row => row[4])));
+        if (!paysOption)
+        {
+            return Task.FromResult(CallGSResult.Error("tip.not_material_for_break"));
+        }
+
         var syncItems = new List<Item>();
         foreach (var (templateId, count) in requestedMaterials)
         {

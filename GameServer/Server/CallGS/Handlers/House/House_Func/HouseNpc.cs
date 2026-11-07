@@ -13,7 +13,8 @@ public class ChangeNpcSuit : IHouseFuncHandler
         var npcId = HouseJson.NumField(root, "NpcId");
         var suitId = HouseJson.NumField(root, "SuitId");
         var sync = new NtfSyncPlayer();
-        await HouseAttr.SetAsync(context.Connection, (uint)(npcId * 50 + 7), (uint)Math.Max(0, suitId), sync, sendImmediate: true);
+        if (HouseJson.IsId(npcId))
+            await HouseAttr.SetAsync(context.Connection, (uint)(npcId * 50 + 7), (uint)Math.Max(0, suitId), sync, sendImmediate: true);
 
         var rsp = new JsonObject
         {
@@ -42,7 +43,7 @@ public class ChangeNpcSuitByAreaId : IHouseFuncHandler
         var suitId = HouseJson.NumField(root, "SuitId");
         var sync = new NtfSyncPlayer();
 
-        if (npcId > 0 && areaId > 0)
+        if (HouseJson.IsId(npcId) && areaId > 0)
         {
             uint[] slotSids = Enumerable.Range(24, 6).Select(i => (uint)(npcId * 50 + i)).ToArray();
             uint? chosenSid = null;
@@ -86,7 +87,7 @@ public class ChangeGirlBeachSuitId : IHouseFuncHandler
         var npcId = HouseJson.NumField(root, "NpcId");
         var suitId = HouseJson.NumField(root, "SuitId");
         var sync = new NtfSyncPlayer();
-        if (npcId > 0)
+        if (HouseJson.IsId(npcId))
             await HouseAttr.SetAsync(context.Connection, (uint)(npcId * 50 + 8), (uint)Math.Max(0, suitId), sync, sendImmediate: true);
 
         return CallGSResult.Ok(HouseRequestScript.Synthesize(root), sync);

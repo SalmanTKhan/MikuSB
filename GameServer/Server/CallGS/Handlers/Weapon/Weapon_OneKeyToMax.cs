@@ -39,7 +39,9 @@ public class Weapon_OneKeyToMax : CallGSHandler<OneKeyToMaxParam>
             .Where(x => x != 0)
             .ToHashSet();
 
-        // Validate all materials upfront before making any changes
+        // Validate all materials upfront before making any changes. Totals span every stage, or the same
+        // stack named twice passes each check and then underflows when spent.
+        var totalUse = new Dictionary<uint, ulong>();
         foreach (var stage in req.TbBreakUpgradeMat)
         {
             if (stage == null || stage.Count < 3) continue;
@@ -58,8 +60,9 @@ public class Weapon_OneKeyToMax : CallGSHandler<OneKeyToMaxParam>
                     return Task.FromResult(CallGSResult.Error("tip.material_not_enough"));
                 }
 
+                totalUse[itemId] = totalUse.GetValueOrDefault(itemId) + count;
                 var material = FindInventoryItem(inventory, itemId);
-                if (material == null || material.ItemCount < count)
+                if (material == null || material.ItemCount < totalUse[itemId])
                 {
                     return Task.FromResult(CallGSResult.Error("tip.material_not_enough"));
                 }

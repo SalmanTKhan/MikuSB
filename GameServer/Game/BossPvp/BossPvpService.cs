@@ -83,7 +83,7 @@ internal static class BossPvpService
     public static (object Response, NtfSyncPlayer Sync) HandleRecord(PlayerInstance player, string? param)
     {
         var req = Deserialize<RecordParam>(param);
-        if (req == null)
+        if (req == null || !GameData.BossPvpBossData.ContainsKey(req.NId))
         {
             return (new { bRecord = false }, new NtfSyncPlayer());
         }
@@ -106,7 +106,7 @@ internal static class BossPvpService
     {
         var req = param?.Deserialize<SettlementParam>(JsonOptions);
         var sync = new NtfSyncPlayer();
-        if (req == null)
+        if (req == null || !GameData.BossPvpBossData.ContainsKey(req.NId))
         {
             return (new JsonObject(), sync);
         }
@@ -141,7 +141,7 @@ internal static class BossPvpService
     {
         var req = param?.Deserialize<FailParam>(JsonOptions);
         var sync = new NtfSyncPlayer();
-        if (req == null)
+        if (req == null || !GameData.BossPvpBossData.ContainsKey(req.NId))
         {
             return (new JsonObject(), sync);
         }
@@ -156,7 +156,7 @@ internal static class BossPvpService
     {
         var req = Deserialize<MopupParam>(param);
         var sync = new NtfSyncPlayer();
-        if (req == null)
+        if (req == null || !GameData.BossPvpBossData.ContainsKey(req.NId))
         {
             return (new { }, sync);
         }

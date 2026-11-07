@@ -32,10 +32,20 @@ public class GirlSpine_ChildUnLock : CallGSHandler<ChildUnLockParam>
 
         var mastIdx = req.Info.Indx;
         var subIdx = req.Info.InSubIdx;
-        if (mastIdx <= 0 || subIdx <= 0)
+        // The ranges SpineExcel and NodeConditionExcel define; larger values allocate or skip the cost.
+        if (mastIdx is < 1 or > 6 || subIdx is < 1 or > 9)
         {
             return CallGSResult.Error("error.BadParam");
         }
+
+        var cardKey = (Detail: (uint)((card.TemplateId >> 16) & 0xFFFF), Particular: (uint)((card.TemplateId >> 32) & 0xFFFF));
+        var cardExcel = GameData.CardData.Values.FirstOrDefault(
+            x => x.Detail == cardKey.Detail && x.Particular == cardKey.Particular);
+        if (cardExcel == null || !GameData.SpineData.TryGetValue(cardExcel.SpineId, out var spineExcel))
+            return CallGSResult.Error("error.BadParam");
+        var nodeCondId = spineExcel.GetNodeReq(mastIdx);
+        if (nodeCondId == 0 || !GameData.NodeConditionData.TryGetValue(nodeCondId, out var nodeCond))
+            return CallGSResult.Error("error.BadParam");
 
         // Spines[MastIdx-1] is a bitmask; bit (SubIdx-1) = 1 means that sub-node is unlocked.
         // GetSpine(MastIdx, SubIdx) checks (Spines[MastIdx-1] & (1 << (SubIdx-1))) != 0
@@ -52,17 +62,12 @@ public class GirlSpine_ChildUnLock : CallGSHandler<ChildUnLockParam>
 
         // Consume materials
         var requestedMaterials = new Dictionary<ulong, uint>();
-        foreach (var row in req.Materials)
+        // The table sets the price; the client's list is only what it thinks it costs.
+        foreach (var row in nodeCond.GetNodeCost(subIdx))
         {
-            if (row == null || row.Count < 5) continue;
-            var genre = (uint)Math.Max(0, row[0]);
-            var detail = (uint)Math.Max(0, row[1]);
-            var particular = (uint)Math.Max(0, row[2]);
-            var level = (uint)Math.Max(0, row[3]);
-            var count = (uint)Math.Max(0, row[4]);
-            if (genre == 0 || detail == 0 || particular == 0 || level == 0 || count == 0) continue;
-            var tid = GameResourceTemplateId.FromGdpl(genre, detail, particular, level);
-            requestedMaterials[tid] = requestedMaterials.GetValueOrDefault(tid) + count;
+            if (row.Count < 5) continue;
+            var tid = GameResourceTemplateId.FromGdpl((uint)row[0], (uint)row[1], (uint)row[2], (uint)row[3]);
+            requestedMaterials[tid] = requestedMaterials.GetValueOrDefault(tid) + (uint)row[4];
         }
 
         var syncItems = new List<Item>();

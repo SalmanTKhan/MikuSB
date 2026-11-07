@@ -1,3 +1,4 @@
+using MikuSB.SdkServer.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using MikuSB.Configuration;
@@ -147,13 +148,14 @@ public class RouteController : ControllerBase
             {
                 platformPrivacyAgreement = "https://www.amazingseasun.com/privacy.html?lang=zh-Hant&gamecode=200001086",
                 payType = new[] { "mycard" },
-                loginType = new[] { "mail", "google", "twitter", "guest", "steam" },
+                // The SDK reads this list once the names are camelCase; only mail login is emulated here.
+                loginType = new[] { "mail" },
                 closeGeetest = false,
                 userAgreement = "https://www.amazingseasun.com/user.html?lang=zh-Hant&gamecode=111111680",
                 privacyAgreement = "https://www.amazingseasun.com/privacy.html?lang=zh-Hant&gamecode=111111680",
                 initPrivacyUpdateTime = 0,
                 platformUserAgreement = "https://www.amazingseasun.com/user.html?lang=zh-Hant&gamecode=200001086",
-                accountPublicKey = "",
+                accountPublicKey = LoginPasswordKey.PublicKeyBase64,
                 payChannel = (string[]?)null,
                 registerPrivacyUrl = "https://xgsdk.xoyo.games:13443/seasun/privacy-agreement/200001086/register/privacy.html?language=zh-Hant",
                 loginPrivacyUrl = "https://xgsdk.xoyo.games:13443/seasun/privacy-agreement/111111680/login/privacy.html?language=zh-Hant"
@@ -161,7 +163,8 @@ public class RouteController : ControllerBase
             msg = "操作成功"
         };
 
-        return Ok(rsp);
+        // The SDK looks these fields up by their camelCase names, including accountPublicKey.
+        return Utils.ExactJson.Serialize(rsp);
     }
 
     private static AccountData? ResolveAccountByUid(string? uid)
@@ -202,7 +205,8 @@ public class RouteController : ControllerBase
                 return accountByEmail;
         }
 
-        return ResolveAccountByUid(uid);
+        // A uid is public and proves nothing: only a matching token or the checked email path may log in.
+        return null;
     }
 
     private async Task<string?> GetJsonBodyValue(string propertyName)
@@ -315,7 +319,9 @@ public class RouteController : ControllerBase
         [FromQuery] string? email,
         [FromForm] string? form_uid,
         [FromForm] string? form_token,
-        [FromForm] string? form_email
+        [FromForm] string? form_email,
+        [FromQuery] string? password,
+        [FromForm] string? form_password
     )
     {
         var finalEmail = email ?? form_email ?? await GetJsonBodyValue("email");
@@ -326,8 +332,20 @@ public class RouteController : ControllerBase
             if (accountData == null)
             {
                 if (!ConfigManager.Config.ServerOption.AutoCreateUser) return BuildLoginFailedResponse("Account not found.");
-                AccountData.CreateAccount(normalizedEmail, 0, "123456");
+                var newPassword = "123456";
+                if (ConfigManager.Config.ServerOption.LoginPasswordRequired)
+                {
+                    newPassword = LoginPasswordKey.Decrypt(password ?? form_password ?? await GetJsonBodyValue("password")) ?? "";
+                    if (newPassword.Length == 0) return BuildLoginFailedResponse("A password is required.");
+                }
+                AccountData.CreateAccount(normalizedEmail, 0, newPassword);
                 accountData = AccountData.GetAccountByEmail(normalizedEmail)!;
+            }
+            else if (ConfigManager.Config.ServerOption.LoginPasswordRequired)
+            {
+                var finalPassword = LoginPasswordKey.Decrypt(password ?? form_password ?? await GetJsonBodyValue("password"));
+                if (string.IsNullOrEmpty(finalPassword) || !AccountData.VerifyPassword(accountData, finalPassword))
+                    return BuildLoginFailedResponse("Invalid account or password.");
             }
 
             var finalUidValue = accountData.Uid.ToString();

@@ -17,6 +17,10 @@ public class SuppliesExcel : ExcelResource
     [JsonProperty("UseMode")] public JToken? UseModeRaw { get; set; }
     [JsonProperty("Param1")] public JToken? Param1Raw { get; set; }
     [JsonProperty("LuaType")] public string LuaType { get; set; } = "";
+    [JsonProperty("Close")] public JToken? CloseRaw { get; set; }
+
+    /// <summary>Retired by the game: the client's storage screen shows error.ItemClose for a held closed item.</summary>
+    [JsonIgnore] public bool IsClosed => ReadInt(CloseRaw) != 0;
 
     [JsonIgnore] public int Color => ReadInt(ColorRaw);
     [JsonIgnore] public uint ProvideExp => ReadUInt(ProvideExpRaw);

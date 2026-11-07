@@ -10,6 +10,8 @@ public class SocketListener
     public static readonly ConcurrentDictionary<long, SocketConnection> Connections = new();
     private static Action? stopListener;
     private static long nextId;
+    private const int MaxConnections = 1024;
+    private const int MaxConnectionsPerAddress = 32;
     public static IPEndPoint? LocalEndPoint { get; private set; }
 
     public static void StartListener<T>() where T : SocketConnection, new()
@@ -17,6 +19,16 @@ public class SocketListener
         if (stopListener != null) throw new InvalidOperationException("Listener already started.");
         var config = ConfigManager.Config.GameServer;
         var acceptor = new TcpConnectionAcceptor<T>(config.BindAddress, config.Port);
+        acceptor.ConnectionChecker = connection =>
+        {
+            var address = connection.RemoteEndPoint.Address;
+            if (Connections.Count < MaxConnections
+                && Connections.Values.Count(c => c.RemoteEndPoint.Address.Equals(address)) < MaxConnectionsPerAddress)
+                return new ConnectionCheck(ConnectionCheckResult.Accept, "");
+
+            new Logger("GameServer").Warn($"Refused connection from {address}: connection limit reached.");
+            return new ConnectionCheck(ConnectionCheckResult.Reject, "Connection limit reached.");
+        };
         acceptor.ConnectionAccepted += connection =>
         {
             connection.ConnectionId = Interlocked.Increment(ref nextId);

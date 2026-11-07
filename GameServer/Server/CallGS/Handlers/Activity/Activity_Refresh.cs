@@ -82,7 +82,15 @@ public class Activity_Refresh : CallGSHandler
         // rolled back here too - the login path covers the normal case, this covers a client that stays
         // open across midnight. The reset rides along in the same attribute sync.
         if (string.Equals(conf?.Class, ActivitySignService.MonthlySignClass, StringComparison.OrdinalIgnoreCase))
+        {
             ActivitySignService.RollDailyState(player, activityId, sync);
+
+            // A 7 day card only sends its claim when reward row "counter" exists, and rows start at 1.
+            var counter = ActivitySignService.SignedDaySid(activityId);
+            if (GameData.SignShortData.Keys.Any(key => key.ActivityId == activityId)
+                && player.Attributes.GetValue(ActivitySignService.GroupId, counter) == 0)
+                ActivitySignService.SetAttr(player, counter, 1, sync);
+        }
 
         var payload = new JsonObject
         {

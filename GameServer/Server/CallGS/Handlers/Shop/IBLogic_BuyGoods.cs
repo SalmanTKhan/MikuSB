@@ -6,6 +6,7 @@ using MikuSB.Database.Player;
 using MikuSB.Enums.Item;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.Proto;
+using MikuSB.Util;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +17,8 @@ namespace MikuSB.GameServer.Server.CallGS.Handlers.Shop;
 [CallGSApi("IBLogic_BuyGoods")]
 public class IBLogic_BuyGoods : CallGSHandler<IbBuyGoodsParam>
 {
+    private const uint MaxBuyCount = 99;
+    private const uint MaxSelectedQuantity = 999;
     private const uint BuyGroupId = AttrIds.Shop.PurchaseGid;
     private const uint RedGroupId = AttrIds.Shop.RedDotGid;
     private const uint CashGroupId = AttrIds.CurrencyGid;
@@ -26,9 +29,23 @@ public class IBLogic_BuyGoods : CallGSHandler<IbBuyGoodsParam>
     protected override async Task<CallGSResult> HandleAsync(CallGSContext context, IbBuyGoodsParam req)
     {
 
+        if (!ConfigManager.Config.ServerOption.AllowFreePurchases)
+            return CallGSResult.Error("ui.TxtNotOpen");
+
         var player = context.Connection.Player!;
+        if (req != null && (req.Count > MaxBuyCount
+                            || (req.SelectItem1?.Count >= 5 && req.SelectItem1[4] > MaxSelectedQuantity)
+                            || (req.SelectItem2?.Count >= 5 && req.SelectItem2[4] > MaxSelectedQuantity)))
+        {
+            return CallGSResult.Error("error.BadParam");
+        }
+
         if (req?.Type == 3 && req.GoodsId > 0 && req.Count > 0)
         {
+            // nType comes from the client, so the row itself has to be a battle pass product.
+            if (!GameData.IbGoodsData.TryGetValue(req.GoodsId, out var passGoods) || passGoods.Type != 3)
+                return CallGSResult.Error("error.BadParam");
+
             return await HandleBattlePassPurchase(player, req);
 }
 
@@ -40,10 +57,14 @@ public class IBLogic_BuyGoods : CallGSHandler<IbBuyGoodsParam>
             return CallGSResult.Error("error.BadParam");
         }
 
+        // Only goods the table marks as customisable may carry client-chosen rewards.
+        if (!goods.AllowsSelection && (req.SelectItem1?.Count > 0 || req.SelectItem2?.Count > 0))
+            return CallGSResult.Error("error.BadParam");
+
         if (goods.LimitTimes > 0)
         {
             var buyAttr = player.Attributes.GetOrCreate(BuyGroupId, req.GoodsId);
-            if (buyAttr.Val >= goods.LimitTimes)
+            if ((ulong)buyAttr.Val + req.Count > goods.LimitTimes)
             {
                 return CallGSResult.Error("tip.Mall_Limit_Buy");
             }
@@ -162,7 +183,7 @@ public class IBLogic_BuyGoods : CallGSHandler<IbBuyGoodsParam>
         while (reward.Count < 5)
             reward.Add(1);
 
-        reward[4] = Math.Max(1u, reward[4]) * Math.Max(1u, buyCount);
+        reward[4] = (uint)Math.Min((ulong)Math.Max(1u, reward[4]) * Math.Max(1u, buyCount), uint.MaxValue);
         return reward;
     }
 

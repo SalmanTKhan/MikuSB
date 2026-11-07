@@ -11,6 +11,7 @@ public class IbGoodsExcel : ExcelResource
     [JsonProperty("PreId")] private JToken? PreIdRaw { get; set; }
     [JsonProperty("LimitTimes")] private JToken? LimitTimesRaw { get; set; }
     [JsonProperty("Item")] private JToken? ItemRaw { get; set; }
+    [JsonProperty("DIYItem")] private JToken? DiyItemRaw { get; set; }
     [JsonProperty("Cost")] private JToken? CostRaw { get; set; }
     [JsonProperty("Cost2")] private JToken? Cost2Raw { get; set; }
     [JsonProperty("PcId")] public string PcId { get; set; } = "";
@@ -35,6 +36,9 @@ public class IbGoodsExcel : ExcelResource
 
     [JsonIgnore]
     public uint LimitTimes => ReadUInt(LimitTimesRaw);
+
+    [JsonIgnore]
+    public bool AllowsSelection => ReadUInt(DiyItemRaw) != 0;
 
     [JsonIgnore]
     public List<uint> Item => ReadUIntList(ItemRaw);

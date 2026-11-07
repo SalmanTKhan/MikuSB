@@ -13,7 +13,7 @@ public class SetGroupFurIndex : IHouseFuncHandler
         var groupId = HouseJson.NumField(root, "GroupId");
         var index = HouseJson.NumField(root, "Index");
         var sync = new NtfSyncPlayer();
-        if (areaId > 0 && groupId is >= 1 and <= 10)
+        if (HouseJson.IsId(areaId) && groupId is >= 1 and <= 10)
         {
             var sid = (uint)(areaId * 50 + 20);
             var prev = HouseAttr.Read(context.Connection.Player!, sid);

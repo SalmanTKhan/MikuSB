@@ -83,7 +83,7 @@ public class PlayerInstance(PlayerGameData data)
                 await InventoryManager.AddManifestationItem((ItemTypeEnum)manifest.Genre, manifest.Detail, manifest.Particular, manifest.Level, false);
             }
             await GrantStarterCharacters();
-            foreach (var supplies in GameData.AllSuppliesData)
+            foreach (var supplies in GameData.AllSuppliesData.Where(x => !x.IsClosed))
             {
                 await InventoryManager.AddSuppliesItem(supplies, 90000, false);
             }
@@ -105,8 +105,9 @@ public class PlayerInstance(PlayerGameData data)
     /// <summary>
     /// The three starters every new account keeps. Handing out the whole roster here made the client
     /// replay one "character obtained" presentation per card before the lobby became usable, so the
-    /// roster now starts small: three starters plus the characters of the pinned DLC era. Everything
-    /// else comes from the shops, /giveall and GirlCard_UnLockCharacter.
+    /// roster now starts small: three starters only. Everything else comes from the shops, /giveall,
+    /// GirlCard_UnLockCharacter. Gacha-try levels need no grant at all: the level carries its own fixed
+    /// character (try_girl.Girl) and the client builds the formation from that row.
     /// </summary>
     private static readonly (uint Detail, uint Particular)[] StarterCards =
     [
@@ -119,8 +120,6 @@ public class PlayerInstance(PlayerGameData data)
     {
         foreach (var (detail, particular) in StarterCards)
             await CharacterManager.AddCharacter(ItemTypeEnum.TYPE_CARD, detail, particular, 1, sendPacket: false);
-
-        await GachaTryService.GrantEraCharactersAsync(this, notify: false);
     }
 
     private async ValueTask InitialPlayerManager()
@@ -186,8 +185,19 @@ public class PlayerInstance(PlayerGameData data)
     {
         foreach (var supplies in GameData.AllSuppliesData)
         {
-            await InventoryManager.AddSuppliesItem(supplies, 90000, false);
+            if (!supplies.IsClosed)
+            {
+                await InventoryManager.AddSuppliesItem(supplies, 90000, false);
+                continue;
+            }
+
+            // Earlier logins handed these out too, and the client flags them as abnormal.
+            var held = InventoryManager.GetNormalItemByTemplateId(supplies.TemplateId);
+            if (held != null)
+                InventoryManager.InventoryData.Items.Remove(held.UniqueId);
         }
+
+        DatabaseHelper.SaveDatabaseType(InventoryManager.InventoryData);
     }
 
     public async ValueTask OnLogin()
@@ -320,8 +330,11 @@ public class PlayerInstance(PlayerGameData data)
 
     public void SetDisplayName(string? name)
     {
-        Data.Name = PlayerGameData.NormalizeDisplayName(name);
+        var normalized = PlayerGameData.NormalizeDisplayName(name);
+        Data.Name = normalized.Length > MaxDisplayNameLength ? normalized[..MaxDisplayNameLength] : normalized;
     }
+
+    private const int MaxDisplayNameLength = 32;
 
     public void SetShowItem(int index, ulong itemId)
     {

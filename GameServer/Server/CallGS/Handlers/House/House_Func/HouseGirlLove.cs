@@ -38,7 +38,7 @@ public class ReadGirlLoveStory : IHouseFuncHandler
         var girlId = HouseJson.NumField(root, "GirlId");
         var index = HouseJson.NumField(root, "Index");
         var sync = new NtfSyncPlayer();
-        if (girlId > 0 && index is >= 0 and <= 30)
+        if (HouseJson.IsId(girlId) && index is >= 0 and <= 30)
         {
             var sid = (uint)(girlId * 50 + 2);
             var prev = HouseAttr.Read(context.Connection.Player!, sid);

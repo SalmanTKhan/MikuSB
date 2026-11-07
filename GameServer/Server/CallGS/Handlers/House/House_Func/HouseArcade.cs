@@ -36,10 +36,12 @@ public class ArcadeGameEnter : IHouseFuncHandler
 
     public Task<CallGSResult> Handle(CallGSContext context, string param)
     {
+        var seed = Random.Next(1, 1_000_000_000);
+        SettlementSeeds.Issue(context.Connection.Player!.Uid, "ArcadeGame", (uint)seed);
         var rsp = new JsonObject
         {
             ["FuncName"] = "ArcadeGameEnter",
-            ["nSeed"] = Random.Next(1, 1_000_000_000)
+            ["nSeed"] = seed
         };
         return Task.FromResult(CallGSResult.Ok(HouseRequestScript.Success(rsp)));
     }
@@ -88,7 +90,7 @@ public class ArcadeGameSettlement : IHouseFuncHandler
         // identity handed out by ArcadeGameEnter, so it is used as the replay key.
         var seed = HouseJson.NumField(root, "nSeed");
         var seedSid = HouseArcadeInfoStart + ArcadeAttrLastSettleSeedOffset;
-        if (seed != 0 && HouseAttr.Read(player, seedSid) == (uint)seed)
+        if (!SettlementSeeds.Matches(player.Uid, "ArcadeGame", (uint)seed) || HouseAttr.Read(player, seedSid) == (uint)seed)
         {
             Logger.GetByClassName().Warn(
                 $"Arcade settlement: seed {seed} already settled for uid={player.Uid}, replay ignored.");

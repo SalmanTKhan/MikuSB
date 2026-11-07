@@ -13,6 +13,11 @@ public static class PatchDownloadService
         Environment.GetEnvironmentVariable("MIKUSB_PATCH_URL")
         ?? "https://github.com/Kei-Luna/MikuSB-Patch/releases/download/MikuSB-Patch/MikuSB-Patch.dll";
 
+    /// <summary>Unverified DLLs end up inside the game process, so downloading them is an explicit opt-in.</summary>
+    public static bool UnverifiedDownloadsAllowed =>
+        Environment.GetEnvironmentVariable("MIKUSB_ALLOW_UNVERIFIED_DLLS") == "1"
+        && Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") != "1";
+
     public static void EnsurePatchPresent()
     {
         var patchPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, PatchRelativePath));
@@ -21,6 +26,8 @@ public static class PatchDownloadService
 
         if (Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") == "1")
             throw new FileNotFoundException("Offline mode: supply a reviewed runtime patch before launching the client.", patchPath);
+        if (!UnverifiedDownloadsAllowed)
+            throw new FileNotFoundException("Supply a reviewed runtime patch, or set MIKUSB_ALLOW_UNVERIFIED_DLLS=1 to download an unverified one.", patchPath);
         Directory.CreateDirectory(Path.GetDirectoryName(patchPath)!);
         Logger.Warn($"Patch DLL not found. Downloading to {patchPath}.");
 

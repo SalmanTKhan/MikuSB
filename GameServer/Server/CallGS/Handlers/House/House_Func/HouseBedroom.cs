@@ -13,7 +13,7 @@ public class GirlRegister : IHouseFuncHandler
         var girlId = HouseJson.NumField(root, "GirlId");
         var floorId = HouseJson.NumField(root, "FloorId");
         var sync = new NtfSyncPlayer();
-        if (girlId > 0)
+        if (HouseJson.IsId(girlId))
         {
             var bedroomSid = HouseAttr.GetNextBedroomSid(context.Connection.Player!, (uint)floorId);
             await HouseAttr.SetAsync(context.Connection, HouseAttr.GirlRoomNumSid(girlId), HouseAttr.BedroomRegisteredNoRoom, sync);
@@ -35,7 +35,7 @@ public class SetBedroomGirlId : IHouseFuncHandler
         var bedroomId = HouseJson.NumField(root, "BedroomId");
         var girlId = HouseJson.NumField(root, "GirlId");
         var sync = new NtfSyncPlayer();
-        if (bedroomId > 0 && girlId > 0)
+        if (HouseJson.IsId(bedroomId) && HouseJson.IsId(girlId))
             await HouseAttr.MoveGirlIntoRoomAsync(context.Connection, girlId, bedroomId, sync);
 
         return CallGSResult.Ok(HouseRequestScript.Synthesize(root), sync);
@@ -51,9 +51,9 @@ public class GirlRoomChange : IHouseFuncHandler
         if (root == null) return CallGSResult.NoResponse();
         var girlId = HouseJson.NumField(root, "GirlId");
         var roomId = HouseJson.NumField(root, "RoomId");
-        var oldRoomId = girlId > 0 ? (int)HouseAttr.Read(context.Connection.Player!, HouseAttr.GirlRoomNumSid(girlId)) : 0;
+        var oldRoomId = HouseJson.IsId(girlId) ? (int)HouseAttr.Read(context.Connection.Player!, HouseAttr.GirlRoomNumSid(girlId)) : 0;
         var sync = new NtfSyncPlayer();
-        if (girlId > 0 && roomId > 0)
+        if (HouseJson.IsId(girlId) && HouseJson.IsId(roomId))
             await HouseAttr.MoveGirlIntoRoomAsync(context.Connection, girlId, roomId, sync);
 
         var rsp = new JsonObject
@@ -77,7 +77,7 @@ public class GirlLeaveRoom : IHouseFuncHandler
         var bedroomId = HouseJson.NumField(root, "BedroomId");
         var girlId = HouseJson.NumField(root, "GirlId");
         var sync = new NtfSyncPlayer();
-        if (bedroomId > 0 && girlId > 0)
+        if (HouseJson.IsId(bedroomId) && HouseJson.IsId(girlId))
         {
             await HouseAttr.SetAsync(context.Connection, HouseAttr.BedroomSlotSid(bedroomId), 0, sync);
             await HouseAttr.SetAsync(context.Connection, HouseAttr.GirlRoomNumSid(girlId), HouseAttr.BedroomRegisteredNoRoom, sync);
@@ -97,7 +97,7 @@ public class ExchangeRoomGirl : IHouseFuncHandler
         var roomId1 = HouseJson.NumField(root, "RoomId1");
         var roomId2 = HouseJson.NumField(root, "RoomId2");
         var sync = new NtfSyncPlayer();
-        if (roomId1 > 0 && roomId2 > 0 && roomId1 != roomId2)
+        if (HouseJson.IsId(roomId1) && HouseJson.IsId(roomId2) && roomId1 != roomId2)
         {
             var slot1 = HouseAttr.BedroomSlotSid(roomId1);
             var slot2 = HouseAttr.BedroomSlotSid(roomId2);

@@ -42,6 +42,7 @@ internal static class ThrowAttr
     internal const uint LevelRewardGotStartOffset = 20;
     internal const uint UnlockDrinkStartOffset = 50;
     internal const int ModeChallenge = 2;
+    internal const int MaxDrinkId = 900;
 
     internal static uint Sid(uint offset) => InfoStart + offset;
 
@@ -109,7 +110,9 @@ public class ThrowGameTutorialFinish : IHouseFuncHandler
         var root = HouseJson.ParseObject(param);
         if (root == null) return CallGSResult.NoResponse();
 
+        // Sids below the next block belong to other fields of the house record.
         var index = Math.Max(0, HouseJson.NumField(root, "Index"));
+        if (index >= ThrowAttr.LevelRewardGotStartOffset - ThrowAttr.TutorialOffset) return CallGSResult.NoResponse();
         var sync = new NtfSyncPlayer();
         await HouseAttr.SetAsync(context.Connection, ThrowAttr.Sid(ThrowAttr.TutorialOffset) + (uint)index, 1, sync);
 
@@ -127,10 +130,12 @@ public class ThrowGameEnter : IHouseFuncHandler
 
     public Task<CallGSResult> Handle(CallGSContext context, string param)
     {
+        var seed = Random.Next(1, 1_000_000_000);
+        SettlementSeeds.Issue(context.Connection.Player!.Uid, "ThrowGame", (uint)seed);
         var rsp = new JsonObject
         {
             ["FuncName"] = "ThrowGameEnter",
-            ["nSeed"] = Random.Next(1, 1_000_000_000)
+            ["nSeed"] = seed
         };
         return Task.FromResult(CallGSResult.Ok(HouseRequestScript.Success(rsp)));
     }
@@ -149,12 +154,20 @@ public class ThrowGameSettlement : IHouseFuncHandler
         var score = Math.Max(0, HouseJson.NumField(root, "nScore"));
         var sync = new NtfSyncPlayer();
 
+        // Score becomes exp and exp buys level rewards, so a settlement needs its own game.
+        if (!SettlementSeeds.ConsumeEntry(player.Uid, "ThrowGame"))
+        {
+            var refused = HouseJson.EchoReply(root, "ThrowGameSettlement");
+            refused["nAddExp"] = 0;
+            return CallGSResult.Ok(HouseRequestScript.Success(refused), sync);
+        }
+
         if (root["tbUnlockDrink"] is JsonObject unlockDrink && unlockDrink["nDrinkIDs"] is JsonArray drinks)
         {
             foreach (var drinkNode in drinks)
             {
                 var drinkId = HouseJson.ToInt(drinkNode);
-                if (drinkId <= 0) continue;
+                if (drinkId is <= 0 or > ThrowAttr.MaxDrinkId) continue;
                 var sid = ThrowAttr.Sid(ThrowAttr.UnlockDrinkStartOffset) + (uint)drinkId;
                 var prev = HouseAttr.Read(player, sid);
                 await HouseAttr.SetAsync(context.Connection, sid, prev + 1, sync);

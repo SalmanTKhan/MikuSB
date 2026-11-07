@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using MikuSB.Enums.Player;
 using MikuSB.Util;
 using MikuSB.Util.Extensions;
@@ -107,16 +109,49 @@ public class AccountData : BaseDatabaseDataHelper
         DatabaseHelper.DeleteAllInstance(uid);
     }
 
+    private const int Pbkdf2Iterations = 210_000;
+
     public static void SetPassword(AccountData account, string password)
     {
-        if (password.Length > 0)
-            account.Password = Extensions.GetSha256Hash(password);
-        else
-            account.Password = "";
+        account.Password = password.Length > 0 ? HashPassword(password) : "";
+    }
+
+    /// <summary>Stores a new password and keeps the cached account row in step with the database.</summary>
+    public static void ChangePassword(AccountData account, string password)
+    {
+        SetPassword(account, password);
+        DatabaseHelper.UpdateInstance(account);
+        var cached = DatabaseHelper.GetInstance<AccountData>(account.Uid);
+        if (cached != null) cached.Password = account.Password;
     }
 
     public static bool VerifyPassword(AccountData account, string password)
-        => account.Password == Extensions.GetSha256Hash(password);
+    {
+        var parts = account.Password.Split('$');
+        if (parts.Length == 4 && parts[0] == "pbkdf2")
+        {
+            var expected = Convert.FromBase64String(parts[3]);
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, Convert.FromBase64String(parts[2]),
+                int.Parse(parts[1]), HashAlgorithmName.SHA512, expected.Length);
+            return CryptographicOperations.FixedTimeEquals(expected, actual);
+        }
+
+        // Older accounts hold an unsalted SHA-256: upgrade them on the first successful login.
+        var legacy = Encoding.UTF8.GetBytes(Extensions.GetSha256Hash(password));
+        if (account.Password.Length == 0
+            || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(account.Password), legacy))
+            return false;
+
+        ChangePassword(account, password);
+        return true;
+    }
+
+    private static string HashPassword(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Pbkdf2Iterations, HashAlgorithmName.SHA512, 32);
+        return $"pbkdf2${Pbkdf2Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+    }
 
 
     #endregion

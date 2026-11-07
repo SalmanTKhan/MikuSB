@@ -1,4 +1,5 @@
 using MikuSB.Database;
+using MikuSB.Util;
 using MikuSB.Proto;
 
 namespace MikuSB.GameServer.Server.Packet.Recv.Login;
@@ -14,6 +15,13 @@ public class HandlerNtfSetAttr : Handler
         {
             // Client writes attributes during login; a session that has not finished logging in yet
             // (for example a reconnect that arrived while the server was still loading) must not crash.
+            return;
+        }
+
+        // Default deny: wallets, purchases and progress must not be settable by a client packet.
+        if (!ConfigManager.Config.ServerOption.ClientWritableAttrGroups.Contains(req.Gid))
+        {
+            new Logger("NtfSetAttr").Warn($"Ignored client write to server-owned attribute {req.Gid}/{req.Sid}");
             return;
         }
 

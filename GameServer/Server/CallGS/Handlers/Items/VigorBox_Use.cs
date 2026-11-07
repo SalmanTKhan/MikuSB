@@ -42,9 +42,12 @@ public class VigorBox_Use : CallGSHandler<VigorBoxUseParam>
         // Resolve and validate every row before touching anything, so a bad row cannot grant stamina
         // and then abort.
         var uses = new List<(BaseGameItemInfo Item, uint Amount)>();
+        var perRow = new Dictionary<uint, uint>();
         foreach (var rowId in request.TbList)
         {
-            if (!inventory.Items.TryGetValue(rowId, out var item) || item.ItemCount == 0)
+            // tbList may repeat a row, so the check has to count every use of it or the stack underflows.
+            perRow[rowId] = perRow.GetValueOrDefault(rowId) + 1;
+            if (!inventory.Items.TryGetValue(rowId, out var item) || item.ItemCount < perRow[rowId])
             {
                 Log.Warn($"VigorBox_Use uid={player.Uid}: row {rowId} is missing or empty; nothing granted.");
                 return Task.FromResult(CallGSResult.Error("tip.NotEnoughItem"));

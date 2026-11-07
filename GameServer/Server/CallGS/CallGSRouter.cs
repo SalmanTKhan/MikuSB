@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using MikuSB.Internationalization;
 using MikuSB.Proto;
 using MikuSB.Util;
@@ -43,6 +44,20 @@ public static class CallGSRouter
         {
             try
             {
+                // These also exist as plain APIs, which must not be a way around the seed check.
+                if (SettlementSeeds.IsGuarded(req.Api))
+                {
+                    JsonNode? param = null;
+                    try { param = JsonNode.Parse(req.Param); } catch (System.Text.Json.JsonException) { }
+                    if (SettlementSeeds.Check(player.Uid, req.Api, param, out _) != SettlementSeeds.Outcome.Accept)
+                    {
+                        await SendUnavailableResponse(connection, req.Api);
+                        return;
+                    }
+
+                    SettlementSeeds.Complete(player.Uid, req.Api, "{}");
+                }
+
                 await handler.Handle(connection, req.Param, seqNo);
                 await player.OnHeartBeat();
             }

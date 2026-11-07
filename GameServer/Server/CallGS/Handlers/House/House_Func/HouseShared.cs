@@ -67,6 +67,9 @@ internal static class HouseRequestScript
 
 internal static class HouseJson
 {
+    /// <summary>Ids scale into sids (id * 50 + n); above this they reach the mini-game records from 15000.</summary>
+    internal static bool IsId(int id) => id is > 0 and < 300;
+
     internal static JsonObject? ParseObject(string json)
     {
         try

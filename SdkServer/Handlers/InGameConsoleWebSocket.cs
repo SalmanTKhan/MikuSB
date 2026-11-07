@@ -20,6 +20,26 @@ public static class InGameConsoleWebSocket
             return;
         }
 
+        // Browsers always send Origin and native clients do not, so this stops web pages reaching the console.
+        if (context.Request.Headers.ContainsKey("Origin"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (ConfigManager.Config.HttpServer.RequireConsoleToken)
+        {
+            var header = context.Request.Headers.Authorization.ToString();
+            var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? header["Bearer ".Length..].Trim()
+                : null;
+            if (!MikuSB.SdkServer.Utils.AdminToken.IsValid(token))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+        }
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;

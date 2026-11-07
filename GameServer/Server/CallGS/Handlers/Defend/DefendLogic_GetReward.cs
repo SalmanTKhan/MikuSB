@@ -97,7 +97,8 @@ public class DefendLogic_GetReward : CallGSHandler
 
         if (targetId != 0)
         {
-            var index = requestedIndex != 0 ? (int)requestedIndex : order.IndexOf(targetId) + 1;
+            // The claim bit comes from the level's own list, or one target could pay once per client index.
+            var index = order.IndexOf(targetId) + 1;
             if (index > 0)
                 result.Add((targetId, index));
 

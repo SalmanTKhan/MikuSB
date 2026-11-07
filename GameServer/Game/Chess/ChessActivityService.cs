@@ -27,6 +27,7 @@ public static class ChessActivityService
     // Rank rewards are paid in the currency named by chess.txt's Award column when present; otherwise
     // in the "fans item" stack the client uses for the same payout (RichmanLogic.FansItem).
     private static readonly uint[] FansItem = [5, 25, 4, 1];
+    private const long MinBoardSeconds = 10;
 
     public static ChessActivityExcel? Row(uint id) =>
         GameData.ChessActivityData.TryGetValue(id, out var row) ? row : null;
@@ -168,6 +169,9 @@ public static class ChessActivityService
     /// Validates and closes the run opened by <see cref="OpenSession"/>. Returns false for replays and
     /// for settlements of a run that never started, so rewards can only be paid once.
     /// </summary>
+    public static bool TrySpendVotes(PlayerInstance player, uint count, out string error) =>
+        CurrencyService.TrySpendItem(player, FansItem, count, out error);
+
     public static bool TryCloseSession(PlayerInstance player, uint seed, uint activityId, uint mapId)
     {
         var session = ReadSession(player);
@@ -176,7 +180,12 @@ public static class ChessActivityService
         if (SessionUInt(session, "done") != 0)
             return false;
 
-        if (seed != 0 && SessionUInt(session, "seed") != seed)
+        // No seed exemption, and no instant finish: a board cannot end in the seconds after entering.
+        if (seed == 0 || SessionUInt(session, "seed") != seed)
+            return false;
+        if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (session["at"]?.GetValue<long>() ?? 0) < MinBoardSeconds)
+            return false;
+        if (MapRow(activityId, mapId) == null)
             return false;
         if (SessionUInt(session, "act") != activityId || SessionUInt(session, "map") != mapId)
             return false;

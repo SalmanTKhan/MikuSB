@@ -20,6 +20,12 @@ public class SupporterCard_ResetInitialAffix : CallGSHandler<SupporterCardResetI
             return Task.FromResult(SupporterCardAffixShared.ResetResponse());
         }
 
+        // A fixed pick still has to be an affix this slot's pool can roll.
+        if (fixedMode && req.FixedId > 0 && !SupportAffixService.PoolContains(excel.AffixPool[req.Index - 1], req.FixedId))
+        {
+            return Task.FromResult(SupporterCardAffixShared.ResetResponse());
+        }
+
         var costs = fixedMode ? new[] { excel.FixedAffixCost } : excel.InitialAffixCost;
         if (!costs.Any() || !SupporterCardAffixShared.HasEnoughItems(connection, costs))
         {

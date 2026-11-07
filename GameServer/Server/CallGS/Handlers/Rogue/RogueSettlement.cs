@@ -35,20 +35,25 @@ public static class RogueSettlement
             return (new JsonArray { new JsonObject { ["Awards"] = new JsonArray() } }, sync);
         }
 
+        // Only a node of the current map can settle, and it pays once: the client's level id and a
+        // repeated clear are both ignored, and an unknown node must not add state.
+        var node = RogueService.FindNode(RogueService.CurrentMap(player), nodeId);
+        if (node == null)
+        {
+            Log.Warn($"Rogue settlement for unknown node {nodeId} from uid={player.Uid}.");
+            return (new JsonArray { new JsonObject { ["Awards"] = new JsonArray() } }, sync);
+        }
+
+        var pathInfo = RogueService.ReadPathInfo(player);
+        var alreadyCleared = RogueService.NodeState(pathInfo, nodeId)["nState"]?.GetValue<uint>() == 2;
+
         RogueService.SetNodeState(player, nodeId, state, sync);
         RogueService.ApplyHealth(player, tbParam?["tbHP"], sync);
 
         var awards = new JsonArray();
-        if (state == 2)
+        if (state == 2 && !alreadyCleared && node.LevelId != 0)
         {
-            var level = levelId != 0 ? RogueService.FindLevel(levelId) : null;
-            var node = RogueService.FindNode(RogueService.CurrentMap(player), nodeId);
-            if (node != null)
-            {
-                if (node.Node == 1 && node.LevelId != 0 && level == null)
-                    level = RogueService.FindLevel(node.LevelId);
-            }
-
+            var level = RogueService.FindLevel(node.LevelId);
             if (level != null && level.AwardRows.Count > 0)
             {
                 IReadOnlyList<IReadOnlyList<uint>> rows = level.AwardRows

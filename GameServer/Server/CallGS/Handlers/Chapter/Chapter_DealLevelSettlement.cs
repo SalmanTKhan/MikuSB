@@ -35,7 +35,26 @@ public class Chapter_DealLevelSettlement : CallGSHandler<DealLevelSettlementPara
 
     protected override async Task<CallGSResult> HandleAsync(CallGSContext context, DealLevelSettlementParam request)
     {
+        var uid = context.Player.Uid;
+        switch (SettlementSeeds.Check(uid, request.SCmd, request.TbParam, out var previous))
+        {
+            case SettlementSeeds.Outcome.Reject:
+                Logger.Warn($"Rejected {request.SCmd} without its enter-level seed from uid={uid}.");
+                return CallGSResult.Ok(new JsonObject
+                {
+                    ["sCmd"] = request.SCmd,
+                    ["tbParam"] = new JsonObject { ["sErr"] = "error.BadParam" }
+                });
+            case SettlementSeeds.Outcome.Replay:
+                return CallGSResult.Ok(new JsonObject
+                {
+                    ["sCmd"] = request.SCmd,
+                    ["tbParam"] = JsonNode.Parse(previous!)
+                });
+        }
+
         var (payload, extraSync) = await BuildSettlementPayloadAsync(context.Player, request.SCmd, request.TbParam);
+        SettlementSeeds.Complete(uid, request.SCmd, payload.ToJsonString());
         var response = new JsonObject
         {
             ["sCmd"] = request.SCmd ?? "Chapter_LevelSettlement",

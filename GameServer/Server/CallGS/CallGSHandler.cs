@@ -24,6 +24,8 @@ public abstract class CallGSHandler : ICallGSHandler
             SequenceNumber = seqNo,
             RawParam = param
         }, param);
+        if (connection.Player != null && result.SendResponse)
+            SettlementSeeds.RecordEnter(connection.Player.Uid, Api, result.Argument);
         await SendResultAsync(connection, result);
     }
 

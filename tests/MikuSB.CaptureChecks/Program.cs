@@ -366,6 +366,26 @@ try {
     Console.WriteLine("PASS battle pass: first open, free and premium claims once each, buy level, top level and box");
     Check(Error(await Existing<GirlCard_UpdateLevel>("""{"Id":-1,"tbMaterials":[{"Id":1,"Num":1}]}""")), "Negative card GUID accepted");
     Console.WriteLine("PASS lineup ownership and invalid upgrade rejection");
+
+    // A length that wraps negative used to loop on the same bytes forever.
+    var spin = Task.Run(() => MikuSB.GameServer.Server.Packet.Recv.Online.OnlineRoomService.Varints([0x0A, 0xFA, 0xFF, 0xFF, 0xFF, 0x0F]));
+    var grow = Task.Run(() => MikuSB.GameServer.Server.Packet.Recv.Online.OnlineRoomService.Varints([0x08, 0x01, 0x0A, 0xF8, 0xFF, 0xFF, 0xFF, 0x0F]));
+    await Task.WhenAny(Task.WhenAll(spin, grow), Task.Delay(3000));
+    Check(spin.IsCompleted && grow.IsCompleted, "Varints did not terminate");
+    Console.WriteLine("PASS online room varints stop on a wrapping length");
+
+    // Two rows for one stack used to pass per row and then wrap the count to about 4.29 billion.
+    var supportTemplate = GameResourceTemplateId.FromGdpl(3,99,1,1);
+    GameData.SupportCardData.Add(new SupportCardExcel { Genre=3, Detail=99, Particular=1, Level=1 });
+    var supportCardItem = new MikuSB.Database.Inventory.GameSupportCardInfo { UniqueId=880001, TemplateId=supportTemplate, Level=1 };
+    player.InventoryManager.InventoryData.SupportCards[880001] = supportCardItem;
+    var matTemplate = GameResourceTemplateId.FromGdpl(5,3,99,1);
+    GameData.SuppliesData[matTemplate] = new SuppliesExcel { Genre=5, Detail=3, Particular=99, Level=1 };
+    var matStack = new MikuSB.Database.Inventory.BaseGameItemInfo { UniqueId=880002, TemplateId=matTemplate, ItemCount=2 };
+    player.InventoryManager.InventoryData.Items[880002] = matStack;
+    await Existing<MikuSB.GameServer.Server.CallGS.Handlers.SupporterCard.SupporterCard_Upgrade>("""{"Id":880001,"tbMaterials":[{"Id":880002,"Num":2},{"Id":880002,"Num":1}]}""");
+    Check(matStack.ItemCount == 2, "Duplicate material rows underflowed the stack");
+    Console.WriteLine("PASS repeated material rows cannot underflow an item count");
 }
 finally {
     DatabaseHelper.Stop(); await DatabaseHelper.WaitAsync(); DatabaseHelper.sqlSugarScope?.Dispose();

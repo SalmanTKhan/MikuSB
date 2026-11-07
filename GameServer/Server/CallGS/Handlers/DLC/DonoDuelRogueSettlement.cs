@@ -3,6 +3,7 @@ using MikuSB.Data;
 using MikuSB.Data.Excel;
 using MikuSB.Database;
 using MikuSB.GameServer.Game.Player;
+using MikuSB.GameServer.Server.CallGS;
 using MikuSB.Proto;
 using MikuSB.Util;
 
@@ -35,6 +36,7 @@ internal static class DonoDuelRogueSettlement
 
     /// <summary>The exploration currency (money type 63, the type the drop panel falls back to).</summary>
     private const uint RoomCurrencyType = 63;
+    private const int MaxPickedPerRoom = 20;
 
     public static ValueTask<(JsonNode Payload, NtfSyncPlayer? Sync)> HandleRoomSettlementAsync(
         PlayerInstance player,
@@ -51,10 +53,19 @@ internal static class DonoDuelRogueSettlement
         // client pushes them straight back into the in-run bag and opens the drop panel with them
         // (:771-798). Without this the deck never grew: the mode kept its cards to itself and every
         // exploration ended with cards that no longer existed.
-        var picked = new List<(uint TemplateId, uint Star, uint Quality)>();
-        foreach (var templateId in ReadUintList(tbParam, "tbIdList"))
+        // One payout per entered room; a repeat or a settlement with no entry gets nothing.
+        if (!SettlementSeeds.ConsumeEntry(player.Uid, "DonoDuelRogue"))
         {
-            if (templateId != 0 && !DonoDuelBag.HasTemplate(player, templateId))
+            Logger.Warn($"Donoduel rogue room {roomId} settled without an entry by uid={player.Uid}.");
+            unfinished = true;
+            catchId = 0;
+            tbParam = null;
+        }
+
+        var picked = new List<(uint TemplateId, uint Star, uint Quality)>();
+        foreach (var templateId in ReadUintList(tbParam, "tbIdList").Distinct().Take(MaxPickedPerRoom))
+        {
+            if (GameData.DonoDuelHeroCardData.ContainsKey(templateId) && !DonoDuelBag.HasTemplate(player, templateId))
                 picked.Add((templateId, 1, 1));
         }
 

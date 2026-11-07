@@ -206,6 +206,9 @@ public class StarWish_CleanSubIDCompleted : CallGSHandler<StarWishIdParam>
         if (player == null)
             return Task.FromResult(CallGSResult.Error("error.BadParam"));
 
+        if (!GameData.StarWishStoryQuestData.ContainsKey(request.Id))
+            return Task.FromResult(CallGSResult.Ok(new JsonObject()));
+
         var sync = new NtfSyncPlayer();
         StarWishService.Set(player, StarWishService.StoryProgressSid(request.Id) + 2, 0, sync);
         DatabaseHelper.SaveDatabaseType(player.Data);

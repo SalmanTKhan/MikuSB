@@ -28,6 +28,10 @@ public class DonoDuelTask_GetReward : CallGSHandler
         if (DonoDuelTaskState.IsReceived(player, id))
             return CallGSResult.Ok(new JsonObject { ["nId"] = id });
 
+        // A mission that was never accepted has nothing to pay.
+        if (!DonoDuelTaskState.IsAccepted(player, id))
+            return CallGSResult.Ok("{}");
+
         var sync = new NtfSyncPlayer();
         var rows = DonoDuelTaskState.ReadRewardRows(row.Reward1);
         var granted = await player.RewardManager.GrantConfiguredRewardsAsync(rows, sync);

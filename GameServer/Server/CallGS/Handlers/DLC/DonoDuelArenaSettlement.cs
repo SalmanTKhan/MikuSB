@@ -48,8 +48,11 @@ internal static class DonoDuelArenaSettlement
         var passAttr = player.Attributes.GetOrCreate(PassGroupId, levelId);
         var isFirstClear = passAttr.Val == 0;
 
-        var rewards = await player.RewardManager.GrantConfiguredRewardsAsync(
-            DlcRuntimeOverrides.ReadRewardRows(battleConfig.Reward), sync);
+        // The panel only shows these rows on the first clear (GetPassTime() == 1), so they pay once.
+        var rewards = isFirstClear
+            ? await player.RewardManager.GrantConfiguredRewardsAsync(
+                DlcRuntimeOverrides.ReadRewardRows(battleConfig.Reward), sync)
+            : new JsonArray();
 
         passAttr.Val += 1;
         player.Attributes.SyncTo(sync, passAttr);

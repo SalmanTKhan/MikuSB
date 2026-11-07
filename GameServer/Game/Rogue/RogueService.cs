@@ -212,6 +212,8 @@ public static class RogueService
         return created;
     }
 
+    public static JsonObject ReadPathInfo(PlayerInstance player) => ReadObject(player, AttrIds.Rogue.PathInfoSid);
+
     public static void SetNodeState(PlayerInstance player, uint nodeId, uint state, NtfSyncPlayer? sync)
     {
         var pathInfo = ReadObject(player, AttrIds.Rogue.PathInfoSid);

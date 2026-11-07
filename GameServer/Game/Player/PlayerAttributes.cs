@@ -26,6 +26,8 @@ public sealed class PlayerAttributes
     public IReadOnlyList<PlayerAttr> All => data.Attrs;
     public IReadOnlyList<PlayerStrAttr> AllStrings => data.StrAttrs;
 
+    private const int MaxAttributes = 200_000;
+
     public PlayerAttr? Get(uint gid, uint sid) =>
         attributes.GetValueOrDefault((gid, sid));
 
@@ -45,6 +47,15 @@ public sealed class PlayerAttributes
             Gid = gid,
             Sid = sid
         };
+
+        // A backstop against client-chosen ids growing the saved record. The detached row keeps callers
+        // working without being stored. Real accounts hold a few thousand rows.
+        if (data.Attrs.Count >= MaxAttributes)
+        {
+            new MikuSB.Util.Logger("PlayerAttributes").Warn($"Refused new attribute {gid}/{sid}: player is at the limit.");
+            return attr;
+        }
+
         data.Attrs.Add(attr);
         attributes[(gid, sid)] = attr;
         return attr;

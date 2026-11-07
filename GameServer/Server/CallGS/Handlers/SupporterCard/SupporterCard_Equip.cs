@@ -23,6 +23,12 @@ public class SupporterCard_Equip : CallGSHandler<SupporterCardEquipParam>
             return Task.FromResult(CallGSResult.Ok("{}", "Logistics_Equip"));
         }
 
+        // Must be the player's own card, in one of the three slots the team offsets leave room for.
+        if (req.EqSlot is < 1 or > 3 || player.InventoryManager.GetSupportCardItem((uint)req.SupportCardUid) == null)
+        {
+            return Task.FromResult(CallGSResult.Ok("{}", "Logistics_Equip"));
+        }
+
         var teamIndex = card.SupportTeamIndex;
         var slot = GetTeamIndex((uint)req.EqSlot, teamIndex);
 
@@ -33,11 +39,21 @@ public class SupporterCard_Equip : CallGSHandler<SupporterCardEquipParam>
         }
 
         // Perform equip
+        // A card serves one holder: clear any other character's slot that still points at it.
+        var sync0 = new List<Item>();
+        foreach (var other in player.CharacterManager.CharacterData.Characters.Where(x => x != card))
+        {
+            var held = other.SupportSlots.Where(x => x.Value == (uint)req.SupportCardUid).Select(x => x.Key).ToList();
+            foreach (var key in held) other.SupportSlots.Remove(key);
+            if (held.Count > 0) sync0.Add(other.ToProto());
+        }
+
         card.SupportSlots[slot] = (uint)req.SupportCardUid;
 
         DatabaseHelper.SaveDatabaseType(player.CharacterManager.CharacterData);
 
         var sync = new NtfSyncPlayer();
+        sync.Items.AddRange(sync0);
         sync.Items.Add(card.ToProto());
 
         // Req_EquipChange (no Model) → Logistics_Change; Req_Equip (has Model) → Logistics_Equip

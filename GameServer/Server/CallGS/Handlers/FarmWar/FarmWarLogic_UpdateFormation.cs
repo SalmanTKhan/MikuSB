@@ -24,6 +24,8 @@ public class FarmWarLogic_UpdateFormation : CallGSHandler<FarmWarUpdateFormation
 
         var sync = new NtfSyncPlayer();
         var json = request.Team?.ToJsonString() ?? "[]";
+        if (json.Length > 4096)
+            return Task.FromResult(CallGSResult.Error("error.BadParam", "FarmWarLogic_UpdateFormation"));
         FarmWarActivityService.SetFormation(player, request.LevelId, json, sync);
 
         return Task.FromResult(CallGSResult.Ok("{}", sync, "FarmWarLogic_UpdateFormation"));

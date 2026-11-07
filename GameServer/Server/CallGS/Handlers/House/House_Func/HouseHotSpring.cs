@@ -64,7 +64,7 @@ public class RouletteEnd : IHouseFuncHandler
 
         if (isSuccess == RouletteEndReasonSuccess)
         {
-            if (modeType == RoulettePlayModePlot && girlId > 0)
+            if (modeType == RoulettePlayModePlot && girlId is > 0 and < 90)
             {
                 await HouseAttr.SetAsync(
                     context.Connection,

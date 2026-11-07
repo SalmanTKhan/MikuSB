@@ -56,7 +56,8 @@ public class BagRogue_EquipBag : CallGSHandler<BagRogueEquipParam>
 
         foreach (var slot in request.List ?? [])
         {
-            if (slot.UniqueId == 0)
+            // The bag is saved on the player, so it cannot grow without limit.
+            if (slot.UniqueId == 0 || (!slot.Remove && bag.Count >= 256))
                 continue;
 
             if (slot.Remove)

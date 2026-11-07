@@ -137,8 +137,7 @@ public static class AdminPanelHost
         var elevated = SetupService.IsElevated();
         var tokenFile = WriteTokenFile(token);
         var shortcut = WriteUrlShortcut(url);
-        var clipboard = elevated ? false : CopyTokenToClipboard(token);
-
+        
         try
         {
             var line = new string('-', 72);
@@ -146,12 +145,10 @@ public static class AdminPanelHost
             Console.WriteLine(line);
             Console.WriteLine(" MikuSB admin panel / 管理面板");
             Console.WriteLine($"   URL   : http://127.0.0.1:{new Uri(url).Port}/");
-            Console.WriteLine($"   Token : {token}{(clipboard ? "   (copied to clipboard)" : "")}");
             if (tokenFile != null)
                 Console.WriteLine($"   File  : {tokenFile}");
             if (shortcut != null)
                 Console.WriteLine($"   Link  : {shortcut}");
-            Console.WriteLine($"   Login : {url}");
             if (elevated)
                 Console.WriteLine("   Note  : running as administrator - double-click Link (the clipboard is not shared).");
             Console.WriteLine(line);
@@ -193,6 +190,12 @@ public static class AdminPanelHost
     /// browser, token already in the query string. This is the path that still works when the server runs
     /// elevated, because nothing has to be copied by hand.
     /// </summary>
+    private static void RestrictToOwner(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
     private static string? WriteUrlShortcut(string url)
     {
         try
@@ -202,6 +205,7 @@ public static class AdminPanelHost
             var path = Path.Combine(directory, "admin-panel.url");
             // Internet Shortcut: CRLF matters, and the file has to stay ASCII because the shell reads it as ANSI.
             File.WriteAllText(path, $"[InternetShortcut]{Environment.NewLine}URL={url}{Environment.NewLine}");
+            RestrictToOwner(path);
             return path;
         }
         catch (Exception ex)
@@ -226,6 +230,7 @@ public static class AdminPanelHost
             Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, "admin-token.txt");
             File.WriteAllText(path, token + Environment.NewLine);
+            RestrictToOwner(path);
             Logger.Info($"Admin panel token written to {path}.");
             return path;
         }

@@ -13,10 +13,14 @@ public class GirlSpine_UnlockNodeOneKey : CallGSHandler<OneKeyUnlockParam>
     {
         var player = context.Connection.Player!;
 
-        if (req == null || req.CardId == 0 || req.MastIdx <= 0 || req.SubIdxList == null || req.SubIdxList.Count == 0)
+        // The ranges SpineExcel and NodeConditionExcel define; larger values allocate or skip the cost.
+        if (req == null || req.CardId == 0 || req.MastIdx is < 1 or > 6 || req.SubIdxList == null ||
+            req.SubIdxList.Count == 0 || req.SubIdxList.Any(x => x is < 1 or > 9))
         {
             return Task.FromResult(CallGSResult.Error("error.BadParam", "GirlSpine_ChildUnLock"));
         }
+
+        req.SubIdxList = req.SubIdxList.Distinct().ToList();
 
         var card = player.CharacterManager.GetCharacterByGUID((uint)req.CardId);
         if (card == null)
@@ -34,10 +38,17 @@ public class GirlSpine_UnlockNodeOneKey : CallGSHandler<OneKeyUnlockParam>
 
         var requestedMaterials = new Dictionary<ulong, uint>();
 
-        if (cardExcel != null && GameData.SpineData.TryGetValue(cardExcel.SpineId, out var spineExcel))
+        // A node with no price in the tables must not unlock for free.
+        if (cardExcel == null || !GameData.SpineData.TryGetValue(cardExcel.SpineId, out var spineExcel) ||
+            spineExcel.GetNodeReq(req.MastIdx) == 0 ||
+            !GameData.NodeConditionData.ContainsKey(spineExcel.GetNodeReq(req.MastIdx)))
+        {
+            return Task.FromResult(CallGSResult.Error("error.BadParam", "GirlSpine_ChildUnLock"));
+        }
+
         {
             var nodeCondId = spineExcel.GetNodeReq(req.MastIdx);
-            if (nodeCondId != 0 && GameData.NodeConditionData.TryGetValue(nodeCondId, out var nodeCond))
+            if (GameData.NodeConditionData.TryGetValue(nodeCondId, out var nodeCond))
             {
                 int spineListIdx = req.MastIdx - 1;
                 while (card.Spines.Count <= spineListIdx) card.Spines.Add(0);

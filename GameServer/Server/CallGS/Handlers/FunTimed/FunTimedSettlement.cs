@@ -57,7 +57,8 @@ public static class FunTimedSettlement
         var starAttr = player.Attributes.GetOrCreate(StarGroupId, levelId);
         var newlyReached = mask & ~starAttr.Val & StarMask;
         var oldBits = starAttr.Val;
-        starAttr.Val = (starAttr.Val & ~StarMask) | mask;
+        // OR, not assign: a lower star replay must not clear the bits that record paid tiers.
+        starAttr.Val |= mask;
         player.Attributes.SyncTo(sync, starAttr);
 
         var scoreAttr = player.Attributes.GetOrCreate(ScoreGroupId, levelId);

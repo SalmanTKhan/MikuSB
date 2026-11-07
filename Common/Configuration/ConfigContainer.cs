@@ -30,6 +30,12 @@ public class HttpServerConfig
     public int AdminPort { get; set; } = 21400;
 
     /// <summary>
+    /// When true /ws/gui-console requires the admin token. Turn off only for an in-game console
+    /// build that cannot send one; any local process can then run console commands.
+    /// </summary>
+    public bool RequireConsoleToken { get; set; } = true;
+
+    /// <summary>
     /// Bearer token every <c>/api/*</c> call must carry. Empty on first launch means "generate one, log it
     /// once and persist it into Config.json"; from then on the file is the only copy.
     /// </summary>
@@ -136,11 +142,32 @@ public class ServerOption
     public bool PerIdentityAccount { get; set; } = true;
 
     /// <summary>
-    /// When true a CN (jinshan) login must carry a password matching the account's stored hash.
-    /// Off by default, because the SMS flow the CN client actually uses (/v6/loginBySms) sends no
-    /// password at all, and turning it on would reject every login from the stock client.
+    /// When true an SDK login must carry a password matching the account's stored hash. On by default.
+    /// The SMS flow the CN client uses (/v6/loginBySms) sends no password, so a server for trusted
+    /// players on such a client has to turn this off; anyone can then log in as any username.
     /// </summary>
-    public bool LoginPasswordRequired { get; set; } = false;
+    public bool LoginPasswordRequired { get; set; } = true;
+
+    /// <summary>
+    /// When true, real-money item shop goods are granted without payment. Off by default because a
+    /// client can then give itself any selectable reward and the premium battle pass.
+    /// </summary>
+    public bool AllowFreePurchases { get; set; } = false;
+
+    /// <summary>
+    /// False pays 7 day sign-in cards one day per real day, as retail does. True pays the whole card on the
+    /// first claim, for replayed events whose window may not leave enough days to finish.
+    /// </summary>
+    public bool ShortSignFillsCard { get; set; } = false;
+
+    /// <summary>
+    /// Attribute groups a client may write with NtfSetAttr; everything else is server-owned. Rejected
+    /// writes are logged with their group, so a group the client genuinely needs can be added here.
+    /// </summary>
+    public uint[] ClientWritableAttrGroups { get; set; } = [44, 129];
+
+    /// <summary>The same allow-list for NtfSetStrAttr; rejected writes are logged too.</summary>
+    public uint[] ClientWritableStrAttrGroups { get; set; } = [44];
 
     /// <summary>Password stored on accounts created on first login.</summary>
     public string LoginDefaultPassword { get; set; } = "123456";
@@ -154,7 +181,7 @@ public class ServerOption
     /// logged as a warning, so the desync stays visible instead of silent. Set to false to require
     /// an exact token match again.
     /// </summary>
-    public bool AllowStaleTokenLogin { get; set; } = true;
+    public bool AllowStaleTokenLogin { get; set; } = false;
 
     /// <summary>
     /// Address advertised in <c>NtfOnlineStart</c> when an online room starts, used as the fallback
@@ -219,6 +246,15 @@ public class ServerOption
     /// Overridable so an alternative opcode can be probed without a rebuild.
     /// </summary>
     public int OnlineRoomRosterOpcode { get; set; } = 1031;
+
+    /// <summary>
+    /// Solo fallback for the party modes (海姆向前冲 / 优化吧 / 决战哈姆): the client opens the room with
+    /// ReqOnlineRoom(303) and then waits for other players, so a lone player sits on the matchmaking
+    /// spinner forever ("点匹配卡住"). When this is greater than zero and the room still has exactly one
+    /// member this many seconds later, the server starts the level itself - the same payload
+    /// ReqOnlineRoomStart(305) would have produced. Set to 0 to keep the wait-for-players behaviour.
+    /// </summary>
+    public int OnlineRoomAutoStartSeconds { get; set; } = 8;
 }
 
 public class ServerProfile
@@ -241,22 +277,39 @@ public class LoaderOptions
     public string GamePath { get; set; } = "";
     public string[] PatchPaths { get; set; } = [@"Patch\MikuSB-Patch.dll"];
     public bool EnableInGameConsole { get; set; } = true;
-    public bool AutoUpdateInGameConsole { get; set; } = true;
+    public bool AutoUpdateInGameConsole { get; set; } = false;
     public string InGameConsoleLoaderPath { get; set; } = @"Patch\MikuSB-InGame-GUI-Console.Loader.dll";
     /// <summary>
-    ///     Launch arguments handed to the client. Deliberately free of channel arguments: a fresh install does not
-    ///     know which channel the operator wants, and baking <c>-channelid=seasun</c> in here made an unconfigured
-    ///     server indistinguishable from one that had been set up for the global build. The setup wizard writes the
-    ///     channel argument together with the region.
+    ///     Launch arguments handed to the client. The default set is the upstream one and targets the global
+    ///     (Seasun) build, because that is the client the release is downloaded for; the setup wizard rewrites
+    ///     this list together with <see cref="Region" />, so a CN install ends up with its own channel argument
+    ///     (<c>-ChannelID=jinshan</c>, plus <c>-gclid=CBJQ_setup</c>) instead of this default. The loader also
+    ///     re-checks the pair at launch: <see cref="Region" /> wins over a channel flag that disagrees with it.
     /// </summary>
-    public string[] Arguments { get; set; } = ["-FeatureLevelES31"];
+    public string[] Arguments { get; set; } = ["-FeatureLevelES31", "-channelid=seasun", "-NoSplash"];
     public bool SetAllProxy { get; set; } = true;
 
     /// <summary>
     ///     While the server runs, keep the specific-channel SDK host names pointed at this machine
     ///     through a fenced block in the hosts file. The block is removed again on a clean shutdown.
+    ///     Off by default: the default arguments describe the global build, which is redirected by the
+    ///     injected patch DLL, not by hosts. The wizard turns this on when the CN region picks hosts mode.
     /// </summary>
-    public bool ManageCnHosts { get; set; } = true;
+    public bool ManageCnHosts { get; set; }
+
+    /// <summary>
+    ///     How the specific-channel (CN) client is started: <c>hosts</c> points the seven SDK domains at this
+    ///     machine and starts the untouched client, <c>dll</c> injects a CN-channel build of the patch DLL and
+    ///     leaves the hosts file alone. Only the CN region reads it; the global build always injects.
+    /// </summary>
+    public string CnLaunchMode { get; set; } = "hosts";
+
+    /// <summary>
+    ///     DLL injected when <see cref="CnLaunchMode" /> is <c>dll</c>. Deliberately separate from
+    ///     <see cref="PatchPaths" />: that list is refreshed from the release assets, and those only ever carry
+    ///     the global-channel build, so sharing a path would let an update silently replace the CN DLL.
+    /// </summary>
+    public string CnPatchPath { get; set; } = @"Patch\MikuSB-Patch-cn.dll";
 
     /// <summary>
     /// Which client build this server is set up for: "cn" (jinshan channel, redirected with hosts entries)

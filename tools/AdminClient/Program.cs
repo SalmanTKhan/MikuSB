@@ -12,6 +12,8 @@ using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 using var socket = new ClientWebSocket();
 // Only the fixed loopback emulator endpoint; no machine trust-store changes.
 socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+var tokenPath = Environment.GetEnvironmentVariable("MIKUSB_ADMIN_TOKEN_FILE") ?? "Config/admin-token.txt";
+socket.Options.SetRequestHeader("Authorization", "Bearer " + File.ReadAllText(tokenPath).Trim());
 await socket.ConnectAsync(new Uri("wss://127.0.0.1:21500/ws/gui-console"), timeout.Token);
 var id = Guid.NewGuid().ToString();
 var request = JsonSerializer.SerializeToUtf8Bytes(new { type = "execute_command", requestId = id, command = string.Join(' ', args) });

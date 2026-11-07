@@ -27,7 +27,7 @@ public class ShopLogic_GetOpenTime : CallGSHandler
             }
         }
 
-        Add(ShopConfig.TabRows(), "Begin", "End");
+        Add(ShopConfig.ResourceTabRows(), "Begin", "End");
         Add(ShopConfig.DlcShopRows(), "StartTime", "EndTime");
 
         var response = new JsonArray();

@@ -1,5 +1,6 @@
 using MikuSB.Data;
 using MikuSB.Database;
+using MikuSB.Database.Inventory;
 using MikuSB.GameServer.Game.Support;
 using MikuSB.Proto;
 using System.Text.Json;
@@ -28,23 +29,21 @@ public class SupporterCard_Upgrade : CallGSHandler<SupporterCardUpgradeParam>
         var supportCardExcel = GameData.SupportCardData.FirstOrDefault(x => x.TemplateId == supportCard.TemplateId);
         var maxLevel = supportCardExcel?.MaxLevel ?? 10;
 
-        // Validate all materials exist with sufficient count
+        // Rows are merged first: checking each row alone lets two rows for one stack underflow its count.
+        var merged = new Dictionary<uint, ulong>();
         foreach (var mat in req.Materials)
         {
-            var item = player.InventoryManager.InventoryData.Items.GetValueOrDefault((uint)mat.Id);
-            if (item == null || item.ItemCount < mat.Num)
-            {
+            if (mat == null || mat.Id <= 0 || mat.Num == 0)
                 return Task.FromResult(CallGSResult.Ok("{}", "Logistics_Upgrade"));
-            }
+            merged[(uint)mat.Id] = merged.GetValueOrDefault((uint)mat.Id) + mat.Num;
         }
 
-        // Consume materials and accumulate exp
-        var syncItems = new List<Item>();
-        uint gainedExp = 0;
-
-        foreach (var mat in req.Materials)
+        var costs = new List<(BaseGameItemInfo Item, uint Num, uint Exp)>();
+        foreach (var (id, num) in merged)
         {
-            var item = player.InventoryManager.InventoryData.Items[(uint)mat.Id];
+            var item = player.InventoryManager.InventoryData.Items.GetValueOrDefault(id);
+            if (item == null || item.ItemCount < num)
+                return Task.FromResult(CallGSResult.Ok("{}", "Logistics_Upgrade"));
 
             // Look up ProvideExp: check SupportCardData first, then SuppliesData
             uint provideExp = 0;
@@ -53,9 +52,21 @@ public class SupporterCard_Upgrade : CallGSHandler<SupporterCardUpgradeParam>
                 provideExp = scExcel.ProvideExp;
             else if (GameData.SuppliesData.TryGetValue(item.TemplateId, out var supExcel))
                 provideExp = supExcel.ProvideExp;
-            gainedExp += provideExp * (uint)mat.Num;
 
-            item.ItemCount -= (uint)mat.Num;
+            // Anything that gives no exp is not an upgrade material.
+            if (provideExp == 0)
+                return Task.FromResult(CallGSResult.Ok("{}", "Logistics_Upgrade"));
+            costs.Add((item, (uint)num, provideExp));
+        }
+
+        // Consume materials and accumulate exp
+        var syncItems = new List<Item>();
+        uint gainedExp = 0;
+
+        foreach (var (item, num, exp) in costs)
+        {
+            gainedExp = (uint)Math.Min(gainedExp + (ulong)exp * num, uint.MaxValue);
+            item.ItemCount -= num;
             var proto = item.ToProto();
             if (item.ItemCount == 0)
             {

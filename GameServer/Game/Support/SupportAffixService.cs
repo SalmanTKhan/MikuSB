@@ -4,6 +4,10 @@ namespace MikuSB.GameServer.Game.Support;
 
 public static class SupportAffixService
 {
+    public static bool PoolContains(int poolId, uint affixId) =>
+        GameData.SupportAffixPoolData.TryGetValue(poolId, out var pool) &&
+        pool.Groups.Any(group => group.Affixs.Any(id => (uint)id == affixId));
+
     public static (uint AffixId, uint Tier) GenerateRandomAffix(int poolId, IEnumerable<uint>? excludedAffixIds = null)
     {
         if (!GameData.SupportAffixPoolData.TryGetValue(poolId, out var pool))

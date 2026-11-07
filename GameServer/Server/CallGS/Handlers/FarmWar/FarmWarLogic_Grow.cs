@@ -20,10 +20,12 @@ namespace MikuSB.GameServer.Server.CallGS.Handlers.FarmWar;
 // the tab it is showing.
 internal static class FarmWarGrowOps
 {
+    private const uint MaxNodeId = 100000;
+
     public static JsonObject Apply(PlayerInstance player, FarmWarGrowParam request, bool active)
     {
         var sync = new NtfSyncPlayer();
-        if (request.Id != 0)
+        if (request.Id is not 0 and <= MaxNodeId)
             FarmWarActivityService.SetSkill(player, request.Id, active, sync);
 
         var payload = new JsonObject { ["nId"] = request.Id };

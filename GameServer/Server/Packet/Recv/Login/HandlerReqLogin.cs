@@ -1,6 +1,7 @@
 using MikuSB.Data;
 using MikuSB.Database;
 using MikuSB.Database.Account;
+using MikuSB.Enums.Player;
 using MikuSB.Database.Player;
 using MikuSB.GameServer.Game.Activity;
 using MikuSB.GameServer.Game.AlienDefense;
@@ -121,18 +122,24 @@ public class HandlerReqLogin : Handler
                 account = AccountData.GetAccountByUid(staleUid);
                 if (account != null)
                     Logger.Warn($"Stale token for uid={staleUid} ({account.Username}): accepted via " +
-                                $"authInfo uid fallback. stored={account.ComboToken}, " +
-                                $"clientAuthToken={sdkAuthToken}. " +
+                                "authInfo uid fallback. " +
                                 "Set ServerOption.AllowStaleTokenLogin=false to reject instead.");
             }
         }
 
         if (account == null)
         {
-            Logger.Warn($"Rejected login: provider={req.Provider}, token={req.Token}, authToken={sdkAuthToken}");
+            Logger.Warn($"Rejected login: provider={req.Provider}, tokenLength={req.Token?.Length ?? 0}");
             await connection.SendPacket(CmdIds.NtfLogout);
             return;
         }
+        if (account.BanType != BanTypeEnum.None)
+        {
+            Logger.Warn($"Rejected login: uid={account.Uid} is banned ({account.BanType}).");
+            await connection.SendPacket(CmdIds.NtfLogout);
+            return;
+        }
+
         var prev = Listener.GetActiveConnection(account.Uid);
         if (prev != null)
         {
@@ -605,8 +612,26 @@ public class HandlerReqLogin : Handler
         await SendClientPatch(
             connection,
             nameof(DlcClientPatches.GlobalTimeWindows),
-            DlcClientPatches.GlobalTimeWindowsFor(floor, era));
+            DlcClientPatches.GlobalTimeWindowsFor(floor, DlcRuntimeOverrides.ActivationEraEnd(), era));
+        // Switching the era makes GlobalTimeWindows reload the client's activity table, which rebuilds
+        // the login popup queue from the shipped CSVs - so the quiet guard has to run again here, not
+        // only on login. Without this the player enters the DLC page a couple of times, comes back to
+        // the main screen and every era's splash (the 7-day sign card among them) pops in sequence.
+        await SendClientPatch(
+            connection,
+            DlcClientPatches.ActivityFaceQuietName,
+            DlcClientPatches.ActivityFaceQuietFor(floor, DlcRuntimeOverrides.ActivationEraEnd(), era));
         await SendClientPatch(connection, nameof(DlcClientPatches.DlcMissionBoard), DlcClientPatches.DlcMissionBoard);
+        // 供应站（商城）页签同样只看客户端本地窗口：IBLogic.GetGroupList 用 IsInTime 过滤页签、
+        // 还要求该页签的商品非空，两层都是 ibshoptab/ibgoods 的历史时间，于是复刻时代之后
+        // 「时装」下面只剩配件一类。这里把三张表一起钉到当前时间（补丁自带幂等标记）。
+        await SendClientPatch(connection, nameof(DlcClientPatches.IbshopWindows), DlcClientPatches.IbshopWindows);
+        await SendClientPatch(connection, nameof(DlcClientPatches.FarmWarWindows), DlcClientPatches.FarmWarWindows);
+        // 海姆向前冲（Rush）主界面按 online.txt 每行第一个地图的 MapType 决定显示哪个模式按钮，
+        // 而 MapType 来自 PartyLogic.tbHandBookConf；查不到就回落成 MapType 0，于是后来的行把先前的
+        // 覆盖掉，「冲关啦」按钮反而打开最后一行的关卡表（优化吧的 9626）。补丁保留原查表并在未命中时
+        // 用客户端自带图鉴里的地图类型兜底，同时把原始结果打进 Game.log。
+        await SendClientPatch(connection, nameof(DlcClientPatches.PartyModeFix), DlcClientPatches.PartyModeFix);
         await SendClientPatch(connection, nameof(DlcClientPatches.DlcShopWindows), DlcClientPatches.DlcShopWindows);
         // Every DlcFunc button reads its window straight from the table of its own module, and
         // DlcFuncBase.lua:52 decides "已结束" from that table before it ever asks about unlock state -
@@ -648,7 +673,7 @@ public class HandlerReqLogin : Handler
         await SendClientPatch(
             connection,
             nameof(DlcClientPatches.GachaTryWindows),
-            DlcClientPatches.GachaTryWindowsFor(floor, era));
+            DlcClientPatches.GachaTryWindowsFor(floor, DlcRuntimeOverrides.ActivationEraEnd(), era));
     }
 
     /// <summary>
@@ -670,11 +695,19 @@ public class HandlerReqLogin : Handler
             connection,
             nameof(DlcClientPatches.GlobalTimeWindows),
             DlcClientPatches.GlobalTimeWindowsFor(
-                DlcRuntimeOverrides.ActivationFloor(),
-                DlcRuntimeOverrides.EffectiveDlcId));
+            DlcRuntimeOverrides.ActivationFloor(),
+            DlcRuntimeOverrides.ActivationEraEnd(),
+            DlcRuntimeOverrides.EffectiveDlcId));
         // Depends on GlobalTimeWindows (it reuses MikuRawIsInTime), and must run before the client builds
-        // its login popup queue - otherwise every expired activity splash pops at once.
-        await SendClientPatch(connection, nameof(DlcClientPatches.ActivityFaceQuiet), DlcClientPatches.ActivityFaceQuiet);
+        // its login popup queue - otherwise every expired activity splash pops at once. The era floor is
+        // baked in so the served era's own announcements still show (once), while older ones stay quiet.
+        await SendClientPatch(
+            connection,
+            DlcClientPatches.ActivityFaceQuietName,
+            DlcClientPatches.ActivityFaceQuietFor(
+            DlcRuntimeOverrides.ActivationFloor(),
+            DlcRuntimeOverrides.ActivationEraEnd(),
+            DlcRuntimeOverrides.EffectiveDlcId));
         // Main-screen DLC button: its countdown widget re-enters ShowBtnDlc as soon as the deadline it
         // is handed has passed, which recursed into a 363591 frame stack overflow once the relaxed
         // IsInTime let the expired DLC window through (2026-10-06 11:25).
@@ -689,6 +722,10 @@ public class HandlerReqLogin : Handler
         // would throw away the nBegin/nEnd overrides and the string-key metatable that patch installs
         // on the very same table (DlcShopWindows.lua:3).
         await SendClientPatch(connection, nameof(DlcClientPatches.SupplyShop), DlcClientPatches.SupplyShop);
+        await SendClientPatch(connection, nameof(DlcClientPatches.IbshopWindows), DlcClientPatches.IbshopWindows);
+        await SendClientPatch(connection, nameof(DlcClientPatches.FarmWarWindows), DlcClientPatches.FarmWarWindows);
+        // 海姆向前冲主界面的模式按钮由 PartyLogic.GetMapMode 决定，见 PartyModeFix 的注释。
+        await SendClientPatch(connection, nameof(DlcClientPatches.PartyModeFix), DlcClientPatches.PartyModeFix);
         await SendClientPatch(connection, nameof(DlcClientPatches.DlcShopWindows), DlcClientPatches.DlcShopWindows);
         await SendClientPatch(connection, nameof(DlcClientPatches.DonoDuelArenaWindows), DlcClientPatches.DonoDuelArenaWindows);
         // Same module: a base position persisted by a previous broken entry makes the player drop
@@ -753,6 +790,7 @@ public class HandlerReqLogin : Handler
                 nameof(DlcClientPatches.GachaTryWindows),
                 DlcClientPatches.GachaTryWindowsFor(
                     DlcRuntimeOverrides.ActivationFloor(),
+                    DlcRuntimeOverrides.ActivationEraEnd(),
                     DlcRuntimeOverrides.EffectiveDlcId));
         }
 
@@ -1051,6 +1089,9 @@ public class HandlerReqLogin : Handler
     /// </summary>
     private static readonly char[] ForbiddenPatchChars = ['+', '<', '>', '&', '\'', '"'];
 
+    /// <summary>Placeholder prefix used by DlcClientPatches; anything left after rendering is a bug.</summary>
+    private const string UnresolvedTokenMarker = "MIKU_";
+
     public static async Task SendClientPatch(Connection connection, string name, string lua)
     {
         foreach (var bad in ForbiddenPatchChars)
@@ -1061,6 +1102,25 @@ public class HandlerReqLogin : Handler
             Logger.GetByClassName().Error(
                 $"Client patch '{name}' contains '{bad}', which the serializer escapes to \\uXXXX and " +
                 "the client cannot decode; dropping it instead of shipping a payload that silently fails.");
+            return;
+        }
+
+        // Same silent-failure class as above: System.Text.Json escapes every non-ASCII character to
+        // \uXXXX, and an unsubstituted MIKU_ placeholder means a payload was rendered without one of
+        // its arguments. Both die in Misc/Json.lua without a server-side symptom, so refuse them here.
+        if (lua.Any(ch => ch > 0x7E))
+        {
+            Logger.GetByClassName().Error(
+                $"Client patch '{name}' contains non-ASCII characters, which the serializer escapes to " +
+                "\\uXXXX and the client cannot decode; dropping it.");
+            return;
+        }
+
+        if (lua.Contains(UnresolvedTokenMarker, StringComparison.Ordinal))
+        {
+            Logger.GetByClassName().Error(
+                $"Client patch '{name}' still holds an unsubstituted '{UnresolvedTokenMarker}' placeholder; " +
+                "dropping it instead of shipping a payload the Lua side reads as nil.");
             return;
         }
 

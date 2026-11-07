@@ -118,6 +118,7 @@ public class HandlerReqOnlineRoomStart : Handler
 
         Logger.Info($"Online room start: {data.Length} byte(s) [{Convert.ToHexString(data)}] " +
                     $"state={state} onlineId={connection.OnlineRoomId}");
+        connection.OnlineRoomStarted = true;
         await connection.SendPacket(CmdIds.RspOnlineRoomStart);
 
         if (state is not (PlayerStatePreReady or PlayerStateReady))
@@ -193,6 +194,9 @@ public class HandlerReqOnlineRoomInvite : Handler
     {
         Logger.Info($"Online room invite: {data.Length} byte(s) [{Convert.ToHexString(data)}]");
         await connection.SendPacket(CmdIds.RspOnlineRoomInvite);
+
+        // Each invite is a popup on someone else's screen, so a client may only send one every few seconds.
+        if (connection.Player == null || !InviteLimiter.TryAcquire(connection.Player.Uid)) return;
 
         var candidates = OnlineRoomService.Varints(data);
         Logger.Info($"Online room invite values: [{string.Join(", ", candidates)}]");
@@ -317,5 +321,18 @@ public class HandlerReqOnlineRoomUpdateMap : Handler
     {
         Logger.Info($"Online room update map: {data.Length} byte(s) [{Convert.ToHexString(data)}]");
         await connection.SendPacket(CmdIds.RspOnlineRoomUpdateMap);
+    }
+}
+
+internal static class InviteLimiter
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, long> Last = new();
+
+    public static bool TryAcquire(int uid)
+    {
+        var now = Environment.TickCount64;
+        if (Last.TryGetValue(uid, out var at) && now - at < 3000) return false;
+        Last[uid] = now;
+        return true;
     }
 }

@@ -33,6 +33,13 @@ public class TowerEventChapter_LevelSettlement : CallGSHandler
             return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
         }
 
+        // These flags share a group with chapter clears, so only this family's own levels may set them.
+        if (req.LevelId < 0 || !GameData.TowerEventLevelData.ContainsKey((uint)req.LevelId))
+        {
+            Logger.Warn($"Tower event settlement for foreign level {req.LevelId} from uid={player.Uid}.");
+            return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
+        }
+
         var sync = new NtfSyncPlayer();
 
         var levelStateAttr = player.Attributes.GetOrCreate(LevelStateGroupId, (uint)req.LevelId);

@@ -227,6 +227,7 @@ public static class OnlineRoomService
 
     private static readonly object LanGate = new();
     private static readonly List<Connection> LanParkedGuests = [];
+    private const int MaxVarints = 16;
     private static int _lanHostUid;
     private static DateTime _lanHostStartedAt = DateTime.MinValue;
     private static string _lanGuestAddress = string.Empty;
@@ -352,8 +353,9 @@ public static class OnlineRoomService
         if (!string.IsNullOrWhiteSpace(options.OnlineRoomDsAddress)) return null;
         if (options.OnlineRoomHostUid == 0) return null;
 
+        // Only a logged-in player already in the host's room may pull the host into a match.
         var requesterUid = requester.Player?.Uid ?? 0;
-        if (requesterUid == options.OnlineRoomHostUid) return null;
+        if (requesterUid == 0 || requesterUid == options.OnlineRoomHostUid) return null;
 
         lock (LanGate)
         {
@@ -366,6 +368,8 @@ public static class OnlineRoomService
                             $"{options.OnlineRoomHostUid} is not connected; nobody can host the match yet.");
                 return null;
             }
+
+            if (host.OnlineRoomId != requester.OnlineRoomId) return null;
 
             var levelId = ResolveLevelId(requester);
             var levelUrl = levelId != 0 ? BuildLevelUrl(levelId) : string.Empty;
@@ -401,7 +405,23 @@ public static class OnlineRoomService
         var pinned = ConfigManager.Config.ServerOption.OnlineRoomHostUid;
         if (pinned != 0) return uid == pinned;
 
+        // An expired window must not keep the first starter as host forever.
+        if (!LanHostWindowOpen) _lanHostUid = 0;
         return _lanHostUid == 0 || _lanHostUid == uid;
+    }
+
+    /// <summary>Drops a closed connection so it is neither kept alive by the parked list nor kept as host.</summary>
+    public static void ForgetConnection(Connection connection)
+    {
+        lock (LanGate)
+        {
+            LanParkedGuests.Remove(connection);
+            if (connection.Player != null && _lanHostUid == connection.Player.Uid)
+            {
+                _lanHostUid = 0;
+                _lanHostStartedAt = DateTime.MinValue;
+            }
+        }
     }
 
     /// <summary>Remembers a guest that readied before the host, so the handler can answer it later.</summary>
@@ -856,19 +876,25 @@ public static class OnlineRoomService
             {
                 case 0:
                     if (!TryReadVarint(data, ref index, out var value)) return values;
+                    // Room packets carry a handful of fields; a longer list is not a real packet.
+                    if (values.Count >= MaxVarints) return values;
                     values.Add(value);
                     break;
 
                 case 2:
                     if (!TryReadVarint(data, ref index, out var length)) return values;
+                    // Compared as unsigned: a cast length can wrap negative and loop on the same bytes forever.
+                    if (length > (uint)(data.Length - index)) return values;
                     index += (int)length;
                     break;
 
                 case 5:
+                    if (data.Length - index < 4) return values;
                     index += 4;
                     break;
 
                 case 1:
+                    if (data.Length - index < 8) return values;
                     index += 8;
                     break;
 

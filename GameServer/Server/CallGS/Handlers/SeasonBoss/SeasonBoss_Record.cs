@@ -33,6 +33,10 @@ public class SeasonBoss_Record : CallGSHandler<SeasonBossRecordParam>
         if (player == null || request.LevelId == 0)
             return Task.FromResult(CallGSResult.Ok(new JsonObject()));
 
+        // A record without its run's seed could set any best score at any time.
+        if (!SettlementSeeds.Matches(player.Uid, "SeasonBoss", request.Seed))
+            return Task.FromResult(CallGSResult.Ok(new JsonObject()));
+
         var sync = new NtfSyncPlayer();
         var timeSid = SeasonBossRunService.StatSid(request.LevelId, AttrIds.SeasonBoss.ClearTimeOffset);
 

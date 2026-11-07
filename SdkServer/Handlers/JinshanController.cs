@@ -201,9 +201,17 @@ public class JinshanController : ControllerBase
             return null;
         }
 
-        var defaultPassword = string.IsNullOrEmpty(options.LoginDefaultPassword)
-            ? "123456"
-            : options.LoginDefaultPassword;
+        // A shared default would let anyone log in to the new account, so with passwords required
+        // the account takes the password this login supplied.
+        if (options.LoginPasswordRequired && string.IsNullOrEmpty(password))
+        {
+            reason = $"account '{newKey}' needs a password to be created";
+            return null;
+        }
+
+        var defaultPassword = options.LoginPasswordRequired
+            ? password!
+            : string.IsNullOrEmpty(options.LoginDefaultPassword) ? "123456" : options.LoginDefaultPassword;
         try
         {
             AccountData.CreateAccount(newKey, 0, defaultPassword);
@@ -220,18 +228,14 @@ public class JinshanController : ControllerBase
     }
 
     /// <summary>
-    /// Password gate for a resolved account. Off by default because the SMS flow the CN client
-    /// actually uses (/v6/loginBySms) sends no password at all; turn on
-    /// <c>ServerOption.LoginPasswordRequired</c> to require one.
+    /// Password gate for a resolved account. On by default; the SMS flow the CN client uses
+    /// (/v6/loginBySms) sends no password, so that setup must turn off
+    /// <c>ServerOption.LoginPasswordRequired</c>.
     /// </summary>
     private static bool VerifyLoginPassword(AccountData account, string? password, out string reason)
     {
         reason = "";
         if (!ConfigManager.Config.ServerOption.LoginPasswordRequired)
-            return true;
-
-        // An account stored without a password has nothing to check against.
-        if (string.IsNullOrEmpty(account.Password))
             return true;
 
         if (string.IsNullOrEmpty(password))

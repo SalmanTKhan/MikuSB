@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using MikuSB.Data;
 using MikuSB.Database;
 using MikuSB.Database.Player;
+using MikuSB.GameServer.Game.Activity;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.GameServer.Game.Quest;
 using MikuSB.GameServer.Server.CallGS.Handlers.Chapter;
@@ -114,8 +115,9 @@ public static class CapturedGameplay
                     return CallGSResult.Ok(new JsonObject { ["nId"] = id, ["nType"] = type }, api: "ActivityQuest_Flag");
                 }
                 case "Activity_GetAward":
+                    return await ClaimActivityAward(player, state, obj);
                 case "Activity_QuickQuestAward":
-                    return await ClaimActivity(player, state, obj, api == "Activity_QuickQuestAward");
+                    return await ClaimActivity(player, state, obj, true);
                 default: return CallGSResult.Error("ui.TxtNotOpen");
             }
         }
@@ -210,6 +212,52 @@ public static class CapturedGameplay
                 levels.OfType<JsonValue>().Count(v => v.TryGetValue<uint>(out var id) && Passed(player, id)) >= target,
             _ => false // House-specific counters need an authoritative resolver; never trust claim input.
         };
+    }
+
+    /// <summary>
+    /// The client has no Activity_GetAward command: its spinner only closes on the callback for the kind of
+    /// claim, so every answer, refusals included, has to use that name.
+    /// </summary>
+    private static async Task<CallGSResult> ClaimActivityAward(PlayerInstance player, PreservationProgressData state, JsonObject request)
+    {
+        var id = UInt(request, "nId");
+        var type = UInt(request, "nType");
+        if (type == 2)
+            return await ActivityShortSign.GrantShortSignAsync(player, id, new JsonObject { ["nId"] = id, ["nType"] = type });
+
+        if (type == 0 && request["nQuestId"] == null && GameData.ActivityData.TryGetValue(id, out var row)
+            && ActivityFreeItemsService.IsFreeItems(row))
+        {
+            var sync = new NtfSyncPlayer();
+            var granted = await ActivityFreeItemsService.ClaimAsync(player, row, sync);
+            return CallGSResult.Ok(new JsonObject { ["nId"] = id, ["tbRewards"] = granted }, sync, "Activity_UpdateActiveWidget");
+        }
+
+        var result = await ClaimActivity(player, state, request, false);
+        if (result.Api == "DaySign" || type == 1)
+        {
+            var sync = result.Sync ?? new NtfSyncPlayer();
+            SyncSignAttributes(player, state, id, sync);
+            DatabaseHelper.SaveDatabaseType(player.Data);
+            return CallGSResult.Ok(result.Argument, sync, "DaySign");
+        }
+
+        return result.Api != null ? result : CallGSResult.Ok(result.Argument, result.Sync, "ActivityQuest_GetReward");
+    }
+
+    /// <summary>
+    /// The sign window reads its day counter and status from attributes, not from our claim record. A counter
+    /// left at 0 makes the client look up reward row 0 and show congig_reward_err.
+    /// </summary>
+    private static void SyncSignAttributes(PlayerInstance player, PreservationProgressData state, uint id, NtfSyncPlayer sync)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var signed = (uint)state.Claims.Count(k => k.StartsWith($"sign:{id}:{now:yyyy-MM}-", StringComparison.Ordinal));
+        if (signed == 0) return;
+        ActivitySignService.SetAttr(player, ActivitySignService.SignedDaySid(id), signed, sync);
+        if (!state.Claims.Contains($"sign:{id}:{now:yyyy-MM-dd}")) return;
+        ActivitySignService.SetAttr(player, ActivitySignService.TodayStatusSid(id), ActivitySignService.StatusSigned, sync);
+        ActivitySignService.SetAttr(player, ActivitySignService.LastSignDateSid(id), ActivitySignService.TodayStamp(), sync);
     }
 
     private static async Task<CallGSResult> ClaimActivity(PlayerInstance player, PreservationProgressData state,

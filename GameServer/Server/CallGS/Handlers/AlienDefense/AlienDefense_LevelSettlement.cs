@@ -90,7 +90,14 @@ public class AlienDefense_LevelSettlement : CallGSHandler<AlienDefenseLevelSettl
 
         var actId = player.Attributes.GetValue(AttrIds.AlienDefense.Gid, AttrIds.AlienDefense.ActivitySid);
         var row = Data.Excel.AlienDefenseExcel.FindByLevel(request.LevelId, actId);
-        var levelType = row?.FindLevelType(request.LevelId) ?? 0;
+        // The pass flag shares a group with chapter clears, so only this family's own levels may set it.
+        if (row == null)
+        {
+            Log.Warn($"Alien defense settlement for foreign level {request.LevelId} from uid={uid}.");
+            return (new JsonObject { ["sErr"] = "error.BadParam" }, sync);
+        }
+
+        var levelType = row.FindLevelType(request.LevelId);
 
         var questFinished = AlienDefenseQuestService.MarkLevelCleared(player, request.LevelId, sync);
         var passCounted = AddPassTime(player, request.LevelId, sync);

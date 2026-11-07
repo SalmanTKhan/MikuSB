@@ -158,7 +158,6 @@ public class Startup
             await next();
         });
         app.UseRouting();
-        app.UseCors("AllowAll");
         app.UseAuthorization();
         app.UseMiddleware<RequestLoggingMiddleware>();
         app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
@@ -192,11 +191,6 @@ public class Startup
 
     public static void ConfigureServices(IServiceCollection services)
     {
-        services.AddCors(options =>
-        {
-            options.AddPolicy("AllowAll",
-                builder => { builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader(); });
-        });
         services.AddControllers()
             .AddJsonOptions(options =>
             {

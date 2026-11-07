@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using MikuSB.Data;
+using MikuSB.Data.Excel;
+using MikuSB.GameServer.Game.Player;
 using MikuSB.Database;
 using MikuSB.Proto;
 using MikuSB.Util;
@@ -36,9 +38,15 @@ public class DLC_Chapter_STAR_AWARD : CallGSHandler
             if (((maskAttr.Val >> (int)index) & 1u) != 0)
                 continue;
 
-            var rows = ReadStarAwardRows(chapter.StarAwardRaw, index);
+            var rows = ReadStarAwardRows(chapter.StarAwardRaw, index, out var requiredStars);
             if (rows.Count == 0)
                 continue;
+
+            if (EarnedStars(player, chapter) < requiredStars)
+            {
+                Logger.Warn($"DLC chapter {chapterId} star award {index} needs {requiredStars} stars (uid={player.Uid}).");
+                continue;
+            }
 
             var grantedRows = await player.RewardManager.GrantConfiguredRewardsAsync(rows, sync);
             maskAttr.Val |= 1u << (int)index;
@@ -56,6 +64,20 @@ public class DLC_Chapter_STAR_AWARD : CallGSHandler
         }
 
         return CallGSResult.Ok(new JsonObject { ["tbAward"] = granted }, sync);
+    }
+
+    private static uint EarnedStars(PlayerInstance player, DlcChapterExcel chapter)
+    {
+        var total = 0u;
+        var levels = (chapter.LevelRaw as JContainer)?.Descendants().OfType<JValue>().Select(v => v.ToString()) ?? [];
+        foreach (var text in levels)
+        {
+            if (uint.TryParse(text, out var levelId))
+                total += (uint)System.Numerics.BitOperations.PopCount(
+                    player.Attributes.GetValue(AttrIds.Launch.LevelStateGid, levelId) & 0xFFu);
+        }
+
+        return total;
     }
 
     private static IEnumerable<(uint ChapterId, uint Index)> ReadRequests(string param)
@@ -93,19 +115,21 @@ public class DLC_Chapter_STAR_AWARD : CallGSHandler
     /// generated resource json) stores it keyed by the required star count, so index 1 is the entry
     /// with the smallest threshold. A plain list of entries is accepted too.
     /// </summary>
-    private static List<IReadOnlyList<uint>> ReadStarAwardRows(JToken? raw, uint index)
+    private static List<IReadOnlyList<uint>> ReadStarAwardRows(JToken? raw, uint index, out uint requiredStars)
     {
-        if (raw is not JArray and not JObject)
+        requiredStars = 0;
+
+        // Only the keyed form states its threshold; a plain list has no proof of what was earned.
+        if (raw is not JObject obj)
             return [];
 
-        JArray? entry = raw switch
-        {
-            JArray array => array.Count >= index ? array[(int)index - 1] as JArray : null,
-            JObject obj => obj.Properties()
-                .OrderBy(p => uint.TryParse(p.Name, out var key) ? key : uint.MaxValue)
-                .ElementAtOrDefault((int)index - 1)?.Value as JArray,
-            _ => null
-        };
+        var property = obj.Properties()
+            .OrderBy(p => uint.TryParse(p.Name, out var key) ? key : uint.MaxValue)
+            .ElementAtOrDefault((int)index - 1);
+        if (property == null || !uint.TryParse(property.Name, out requiredStars))
+            return [];
+
+        var entry = property.Value as JArray;
 
         if (entry == null)
             return [];

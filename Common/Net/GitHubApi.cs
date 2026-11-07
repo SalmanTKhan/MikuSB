@@ -139,6 +139,9 @@ public sealed class GitHubDownloadOptions
     public long WindowBytes { get; init; } = 1024 * 1024;
     public int DirectAttempts { get; init; } = 1;
 
+    /// <summary>False restricts the download to the original URL; required for anything that gets executed.</summary>
+    public bool AllowMirrors { get; init; } = true;
+
     /// <summary>
     ///     When every source misses <see cref="WindowBytes" /> inside one window, keep the source that
     ///     got furthest instead of failing. A 40 KB/s mirror still delivers the file, only later, and
@@ -212,9 +215,11 @@ public static class GitHubApi
     }
 
     /// <summary>
-    ///     Latest published release, or null when no source could answer. A 404/401/403 from the first
-    ///     source that reached GitHub is reported through <paramref name="onUnavailable" /> and ends the
-    ///     search: mirrors proxy the same API, so they would only repeat the answer.
+    ///     Latest published release, or null when no source could answer. A 404/401/403 is reported through
+    ///     <paramref name="onUnavailable" /> but does <b>not</b> end the search: the mirrors are independent
+    ///     HTTP proxies, not replicas of one answer — measured 2026-11, 8 of the 10 default mirrors answer
+    ///     403/404 for this API path while 2 answer 200. Stopping at the first refusal is why a rate-limited
+    ///     direct call (403, unauthenticated quota is 60/h per IP) used to fail the whole lookup.
     /// </summary>
     public static async Task<GitHubRelease?> GetLatestReleaseAsync(
         string owner,
@@ -226,6 +231,8 @@ public static class GitHubApi
         CancellationToken cancellationToken = default)
     {
         var apiUrl = $"{ApiBaseUrl}/repos/{owner}/{repository}/releases/latest";
+        var refusals = 0;
+        var lastRefusal = "";
 
         foreach (var candidate in Candidates(apiUrl))
         {
@@ -239,8 +246,11 @@ public static class GitHubApi
                 if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized
                     or HttpStatusCode.Forbidden)
                 {
+                    // This host's answer says nothing about the next one: try it before giving up.
+                    refusals++;
+                    lastRefusal = $"{host} {response.StatusCode}";
                     onUnavailable?.Invoke(host, response.StatusCode.ToString());
-                    return null;
+                    continue;
                 }
 
                 response.EnsureSuccessStatusCode();
@@ -258,6 +268,11 @@ public static class GitHubApi
                 onSourceFailed?.Invoke(host, ex.Message);
             }
         }
+
+        if (refusals > 0)
+            Logger.Warn(
+                $"No GitHub source returned {owner}/{repository}'s latest release "
+                + $"({refusals} refused, last: {lastRefusal}).");
 
         return null;
     }
@@ -282,6 +297,8 @@ public static class GitHubApi
         try
         {
             var candidates = Candidates(url, options.DirectAttempts);
+            if (!options.AllowMirrors)
+                candidates = candidates.Take(options.DirectAttempts).ToList();
             var probes = new List<SourceProbe>(candidates.Count);
             Exception? lastError = null;
 
@@ -359,6 +376,12 @@ public static class GitHubApi
     /// <summary>
     ///     Fetches a small text file (version.txt) through the mirror list. No temp file and no progress
     ///     plumbing: a version string is a few bytes, so this walks the candidates until one answers.
+    ///
+    ///     Dropped sources are collected, not logged one by one: on a restricted network the direct URL is
+    ///     expected to fail and the first mirror to answer, and a "could not fetch ... SSL connection could
+    ///     not be established" line per candidate made a perfectly successful check read like an error.
+    ///     A fetch that ends up served by a mirror is one informational line; a fetch that fails everywhere
+    ///     is one line with the last reason, and the caller adds its own warning.
     /// </summary>
     public static async Task<string?> ReadTextAsync(
         string url,
@@ -369,6 +392,7 @@ public static class GitHubApi
         options ??= new GitHubDownloadOptions();
         var owned = client == null;
         client ??= CreateClient("MikuSB-Updater");
+        var failures = new List<string>();
 
         try
         {
@@ -391,6 +415,9 @@ public static class GitHubApi
                         throw new GitHubDownloadException(GitHubDownloadFailure.Empty, host, $"{host} returned an empty file.");
 
                     options.OnSucceeded?.Invoke(host, true);
+                    if (failures.Count > 0)
+                        Logger.Debug($"Read {host}{UrlPath(url)} through a fallback source " +
+                                     $"({failures.Count} source(s) unreachable).");
                     return text;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -399,10 +426,13 @@ public static class GitHubApi
                 }
                 catch (Exception ex)
                 {
+                    failures.Add($"{host}: {ex.Message}");
                     options.OnAttemptFailed?.Invoke(host, ex.Message);
-                    Logger.Debug($"Could not fetch {candidate}: {ex.Message}");
                 }
             }
+
+            if (failures.Count > 0)
+                Logger.Debug($"No source could serve{UrlPath(url)}; last failure was {failures[^1]}.");
 
             return null;
         }
@@ -412,6 +442,10 @@ public static class GitHubApi
                 client.Dispose();
         }
     }
+
+    /// <summary>Path part of a URL, so a log line names version.txt instead of the whole mirror URL.</summary>
+    private static string UrlPath(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? parsed.AbsolutePath : url;
 
     private static async Task DownloadOnceAsync(
         HttpClient client,

@@ -27,7 +27,7 @@ public static class AdminToken
                 configured = RandomNumberGenerator.GetHexString(32);
                 ConfigManager.Config.HttpServer.AdminToken = configured;
                 ConfigManager.SaveConfig();
-                Logger.Warn($"Admin panel token generated; stored in Config.json as HttpServer.AdminToken: {configured}");
+                Logger.Warn("Admin panel token generated; stored as HttpServer.AdminToken.");
             }
 
             _cached = configured.Trim();

@@ -143,15 +143,23 @@ public class PartyLogic_SetTitle : CallGSHandler<PartySetIdParam>
     protected override Task<CallGSResult> HandleAsync(CallGSContext context, PartySetIdParam request)
     {
         var player = context.Connection.Player!;
+        // Equipping needs an unlocked title, except 0 which clears it. The unlock is written elsewhere.
+        if (request.Id != 0 && player.Attributes.GetValue(TitleGid, request.Id) == 0 && !IsKnownTitle(request.Id))
+            return Task.FromResult(CallGSResult.Error("error.BadParam"));
+
         var attr = player.Attributes.Set(TitleGid, 0, request.Id);
-        // Also mark it unlocked so PartyLogic.GetTitleUnlock keeps returning true afterwards.
-        player.Attributes.Set(TitleGid, request.Id, 1);
+        if (request.Id != 0)
+            player.Attributes.Set(TitleGid, request.Id, 1);
 
         var response = new JsonObject { ["nId"] = (int)request.Id };
         return Task.FromResult(CallGSResult.Ok(response.ToJsonString(), PartyAttributes.Sync(player, attr)));
     }
 
     private const uint TitleGid = 147;
+    private const uint MaxTitleId = 10000;
+
+    // No title table is loaded server side; this bounds the id so it cannot grow the record freely.
+    private static bool IsKnownTitle(uint id) => id <= MaxTitleId;
 }
 
 // PartyLogic.lua:751 SetTitleShow -> PartyLogic_SetTitleShow { nType }

@@ -19,6 +19,7 @@ namespace MikuSB.GameServer.Server.CallGS.Handlers.FarmWar;
 // so the reply body is irrelevant; the rewards come from farmwarout_level.json and are granted here.
 public static class FarmWarSettlement
 {
+    private const uint MaxBuffId = 100000;
     private static readonly Logger Log = new(nameof(FarmWarSettlement));
 
     public static (JsonNode Payload, NtfSyncPlayer? Sync) HandleSettlement(
@@ -60,7 +61,7 @@ public static class FarmWarSettlement
             foreach (var buff in buffs)
             {
                 var (buffId, tier) = ReadPair(buff);
-                if (buffId == 0)
+                if (buffId is 0 or > MaxBuffId)
                     continue;
 
                 var attr = player.Attributes.Set(AttrIds.FarmWar.BuffGid, buffId, tier == 0 ? 1u : tier);

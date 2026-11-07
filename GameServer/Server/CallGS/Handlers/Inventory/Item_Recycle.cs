@@ -25,7 +25,12 @@ public class Item_Recycle : CallGSHandler<ItemRecycleParam>
         var config = RecycleConfig.Load();
 
         var itemsToRecycle = new List<(BaseGameItemInfo Item, int RecycleId)>();
-        foreach (var uniqueId in req.TbItems)
+        // One entry per item: a repeated id would pay out again for an item removed once.
+        var equipped = player.CharacterManager.CharacterData.Characters
+            .SelectMany(x => x.SupportSlots.Values.Append(x.WeaponUniqueId))
+            .Where(x => x != 0)
+            .ToHashSet();
+        foreach (var uniqueId in req.TbItems.Distinct())
         {
             BaseGameItemInfo? item = player.InventoryManager.GetWeaponItem((uint)uniqueId)
                 ?? (BaseGameItemInfo?)player.InventoryManager.GetSupportCardItem((uint)uniqueId);
@@ -33,6 +38,11 @@ public class Item_Recycle : CallGSHandler<ItemRecycleParam>
             if (item == null)
             {
                 return CallGSResult.Error("error.Recycle.ItemNotExists");
+            }
+
+            if (equipped.Contains(item.UniqueId) || (item is GameWeaponInfo weapon && weapon.EquipAvatarId != 0))
+            {
+                return CallGSResult.Error("error.Recycle.ItemCanNotRecycle");
             }
 
             var recycleId = GetRecycleId(item);

@@ -30,6 +30,10 @@ public class VirCaptureLevel_SaveCapture : CallGSHandler<VirCaptureSaveCapturePa
 
         var player = context.Connection.Player!;
         var sync = new NtfSyncPlayer();
+        // Each capture pays out, so a region pays once per entered level, not once per call.
+        if (!SettlementSeeds.TryUseOnce(player.Uid, "VirCaptureLevel", (uint)req.RegionId))
+            return CallGSResult.Error("error.BadParam");
+
         VirCaptureStateHelper.SetPointState(player, (uint)req.LevelId, (uint)req.RegionId, 2u, sync);
 
         if (!GameData.VirCaptureCaptureRegionData.TryGetValue((uint)req.LevelId, out var captureRegion))

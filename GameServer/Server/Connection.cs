@@ -1,3 +1,4 @@
+using MikuSB.Proto;
 using MikuSB.Enums.Packet;
 using MikuSB.GameServer.Game.Player;
 using MikuSB.GameServer.Server.Packet;
@@ -22,6 +23,12 @@ public class Connection : SocketConnection
     /// <summary>Team id the client asked for with ReqOnlineRoom(303) (10 = Online.TeamId).</summary>
     public uint OnlineRoomTeamId { get; set; }
 
+    /// <summary>
+    /// Set once a room start (ReqOnlineRoomStart or the solo auto-start in HandlerReqOnlineRoom) has sent
+    /// NtfOnlineStart, so the two paths can never travel the client twice.
+    /// </summary>
+    public bool OnlineRoomStarted { get; set; }
+
     private static readonly HashSet<string> DummyPacketNames =
     [
         
@@ -37,6 +44,7 @@ public class Connection : SocketConnection
     public override void Stop(bool isServerStop = false)
     {
         if (Interlocked.Exchange(ref stopping, 1) != 0) return;
+        Packet.Recv.Online.OnlineRoomService.ForgetConnection(this);
         Player?.OnLogoutAsync();
         SocketListener.UnregisterConnection(this);
         base.Stop(isServerStop);
@@ -56,7 +64,12 @@ public class Connection : SocketConnection
 
             while (SocketConnected())
             {
-                var decodedPacket = await new PacketCodec().ReadPacketAsync(stream, CancelToken.Token);
+                // A silent connection is dropped; an anonymous one quickly and with a small frame limit.
+                var loggedIn = Player != null;
+                using var idle = CancellationTokenSource.CreateLinkedTokenSource(CancelToken.Token);
+                idle.CancelAfter(loggedIn ? TimeSpan.FromMinutes(15) : TimeSpan.FromSeconds(30));
+                var codec = loggedIn ? new PacketCodec() : new PacketCodec { MaxLength = 64 * 1024 };
+                var decodedPacket = await codec.ReadPacketAsync(stream, idle.Token);
 
                 if (decodedPacket == null)
                 {
@@ -108,6 +121,10 @@ public class Connection : SocketConnection
             Logger.Info($"[Dummy] Send Dummy {packetName}");
             return;
         }
+
+        // Before login only the login packets are accepted; nothing else has a player to act on.
+        if (Player == null && opcode is not (CmdIds.ReqLogin or CmdIds.ReqReconnect))
+            return;
 
         // Find the Handler for this opcode
         var handler = HandlerManager.GetHandler(opcode);

@@ -278,10 +278,12 @@ public class PubGameEnter : IHouseFuncHandler
     public Task<CallGSResult> Handle(CallGSContext context, string param)
     {
         var root = HouseJson.ParseObject(param);
+        var seed = Random.Next(1, 1_000_000_000);
+        SettlementSeeds.Issue(context.Connection.Player!.Uid, "PubGame", (uint)seed);
         var rsp = new JsonObject
         {
             ["FuncName"] = "PubGameEnter",
-            ["nSeed"] = Random.Next(1, 1_000_000_000),
+            ["nSeed"] = seed,
             ["nModeType"] = HouseJson.NumField(root, "nModeType"),
             ["nPlayerNum"] = HouseJson.NumField(root, "nPlayerNum"),
             ["bIsGuide"] = false,
@@ -329,7 +331,8 @@ public class PubGameSettlement : IHouseFuncHandler
         var guide = HouseJson.BoolField(root, "bGuide");
         var rank = (uint)Math.Max(0, HouseJson.NumField(root, "nRank"));
 
-        var addExp = PubAttr.ResolveExp(root, guide);
+        // One game, one payout: exp buys level rewards, and a repeat with no game behind it earns none.
+        var addExp = SettlementSeeds.ConsumeEntry(player.Uid, "PubGame") ? PubAttr.ResolveExp(root, guide) : 0u;
         if (addExp > 0)
         {
             var expSid = PubAttr.Sid(PubAttr.ExpOffset);
@@ -464,7 +467,7 @@ public class PubGameGetAchReward : IHouseFuncHandler
                 }
             }
         }
-        else if (raw > 0 && (achvIds.Count == 0 || achvIds.Contains((uint)raw)))
+        else if (raw > 0 && achvIds.Contains((uint)raw))
         {
             var claimedRows = await ClaimAsync(player, (uint)raw, sync);
             if (claimedRows != null)
@@ -514,7 +517,9 @@ public class PubGameAchievementFinish : IHouseFuncHandler
         if (id == 0)
             id = (uint)Math.Max(0, HouseJson.NumField(root, "nAchId"));
 
-        if (id > 0 && GameData.ActivityQuestData.TryGetValue(id, out var quest))
+        // Pub achievements only: this marks a quest complete, and claims for other systems read the same state.
+        if (id > 0 && HouseMiniGameTables.Ids(HouseMiniGameTables.PubAchvTable).Contains(id) &&
+            GameData.ActivityQuestData.TryGetValue(id, out var quest))
         {
             AchievementClaimService.Complete(
                 player,

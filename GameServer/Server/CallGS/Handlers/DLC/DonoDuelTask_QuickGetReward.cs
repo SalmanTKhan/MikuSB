@@ -31,6 +31,9 @@ public class DonoDuelTask_QuickGetReward : CallGSHandler
             if (DonoDuelTaskState.IsReceived(player, id))
                 continue;
 
+            if (!DonoDuelTaskState.IsAccepted(player, id))
+                continue;
+
             // Missions without a Reward1 row (e.g. 104) used to be skipped outright, which silently
             // dropped their Reward3 cards: "claim all" marked them too, so the deck never received
             // the hero cards the story promises. Every finished mission is claimed now; an empty

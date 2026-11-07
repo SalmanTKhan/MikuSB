@@ -28,6 +28,7 @@ public class DlcChapterExcel : ExcelResource
 {
     public uint ID { get; set; }
     [JsonProperty("StarAward")] public JToken? StarAwardRaw { get; set; }
+    [JsonProperty("Level")] public JToken? LevelRaw { get; set; }
 
     public override uint GetId() => ID;
 

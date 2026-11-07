@@ -36,6 +36,10 @@ public class TowerLevel_LevelSettlement : CallGSHandler
             return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
         }
 
+        // The pass flag shares a group with chapter clears, so only this family's own levels may set it.
+        if (req.LevelId < 0 || !GameData.TowerLevelData.ContainsKey((uint)req.LevelId))
+            return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());
+
         var cycle = ResolveCurrentCycle(GameData.ClimbTowerTimeData.Values, DateTime.Now);
         if (cycle == null)
             return (new JsonObject { ["sErr"] = "error.BadParam" }, new NtfSyncPlayer());

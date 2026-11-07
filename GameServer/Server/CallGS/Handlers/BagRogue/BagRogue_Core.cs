@@ -134,38 +134,22 @@ public class BagRogue_NodeWalk : CallGSHandler<BagRogueNodeWalkParam>
 [CallGSApi("BagRogue_NodeFinish")]
 public class BagRogue_NodeFinish : CallGSHandler
 {
-    protected override async Task<CallGSResult> HandleAsync(CallGSContext context, string param)
+    protected override Task<CallGSResult> HandleAsync(CallGSContext context, string param)
     {
         var player = context.Connection.Player;
         if (player == null)
-            return CallGSResult.Error("error.BadParam");
+            return Task.FromResult(CallGSResult.Error("error.BadParam"));
 
         var sync = new NtfSyncPlayer();
         var awards = BagRogueService.FinishRoute(player, sync);
         // No counter bump here: bits 16-31 of (142,2) mean "finished a run", which only an ending node
         // proves. Counting the close button as well would let a player clear the period by walking out.
 
-        var rows = new List<IReadOnlyList<uint>>();
-        foreach (var item in awards)
-        {
-            if (item is not JsonArray row)
-                continue;
-
-            var values = new List<uint>();
-            foreach (var cell in row)
-                values.Add(uint.TryParse(cell?.ToString(), out var parsed) ? parsed : 0);
-
-            if (values.Count >= 5 && values[4] > 0)
-                rows.Add(values);
-        }
-
-        if (rows.Count > 0)
-            await player.RewardManager.GrantConfiguredRewardsAsync(rows, sync);
-
+        // Each row was granted at its stage settlement; this list is only for the summary panel.
         DatabaseHelper.SaveDatabaseType(player.Data);
         DatabaseHelper.SaveDatabaseType(player.InventoryManager.InventoryData);
 
-        return CallGSResult.Ok(new JsonObject { ["tbAward"] = awards }, sync);
+        return Task.FromResult(CallGSResult.Ok(new JsonObject { ["tbAward"] = awards }, sync));
     }
 }
 

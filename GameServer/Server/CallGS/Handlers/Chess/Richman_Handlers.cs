@@ -114,6 +114,10 @@ public class RichmanLogic_VoteGirl : CallGSHandler<RichmanVoteParam>
         if (request.NpcId is 0 or > 8 || request.Count == 0)
             return Task.FromResult(CallGSResult.Error("error.BadParam"));
 
+        // Votes are paid in the fan item; the client's own deduction is not authoritative.
+        if (!ChessActivityService.TrySpendVotes(player, request.Count, out var spendError))
+            return Task.FromResult(CallGSResult.Error(spendError));
+
         var sync = new NtfSyncPlayer();
         ChessActivityService.AddVotes(player, request.NpcId, request.Count, sync);
 
@@ -243,10 +247,12 @@ public class RichManLoveLogic_MapSettlement : CallGSHandler<RichmanSettlementPar
 [CallGSApi("RichManLoveLogic_SettlementUnlockEnd")]
 public class RichManLoveLogic_SettlementUnlockEnd : CallGSHandler<RichmanUnlockEndParam>
 {
+    private const uint MaxEndId = 10000;
+
     protected override Task<CallGSResult> HandleAsync(CallGSContext context, RichmanUnlockEndParam request)
     {
         var player = context.Connection.Player;
-        if (player == null || request.EndId == 0)
+        if (player == null || request.EndId is 0 or > MaxEndId)
             return Task.FromResult(CallGSResult.Error("error.BadParam"));
 
         var sync = new NtfSyncPlayer();

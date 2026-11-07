@@ -17,6 +17,9 @@ namespace MikuSB.TcpSharp
 
         private static readonly Logger Logger = new("PacketCodec");
 
+        /// <summary>Largest accepted frame; lowered before login so an anonymous client cannot claim much memory.</summary>
+        public int MaxLength { get; init; } = MaxPacketLength;
+
         public PacketCodec()
         {
 
@@ -156,7 +159,7 @@ namespace MikuSB.TcpSharp
         {
             var length = BinaryPrimitives.ReadUInt32LittleEndian(header);
 
-            if (length < 2 || length > MaxPacketLength)
+            if (length < 2 || length > MaxLength)
             {
                 Logger.Warn($"Invalid packet length: {length}");
                 return null;
@@ -208,7 +211,7 @@ namespace MikuSB.TcpSharp
             if (length <= 0)
                 return Array.Empty<byte>();
 
-            if (length > MaxPacketLength)
+            if (length > MaxLength)
             {
                 Logger.Warn($"Payload too large: {length}");
                 return null;

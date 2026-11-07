@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MikuSB.Database;
 using MikuSB.Database.Player;
+using MikuSB.GameServer.Game.Dlc;
 using MikuSB.GameServer.Game.Shop;
 using MikuSB.Proto;
 using MikuSB.Util;
@@ -109,15 +110,59 @@ public class ShopLogic_GetGoodsList : CallGSHandler<ShopGetGoodsListParam>
 
 public static class ShopConfig
 {
-    public static IReadOnlyList<JsonNode> TabRows() => Optional("shop/shop_tab.json");
+    // Shops 60-64 exist only in the patch sent to the client, so they are read from that same payload.
+    private static readonly Lazy<IReadOnlyList<JsonNode>> SupplyGoods = new(() => ParseSupplyCsv("GOODS_CSV"));
+    private static readonly Lazy<IReadOnlyList<JsonNode>> SupplyTabs = new(() => ParseSupplyCsv("TABS_CSV"));
+
+    public static IReadOnlyList<JsonNode> TabRows() => [.. ResourceTabRows(), .. SupplyTabs.Value];
+
+    /// <summary>The retail tabs only: the supply shop's open times travel in the client patch.</summary>
+    public static IReadOnlyList<JsonNode> ResourceTabRows() => Optional("shop/shop_tab.json");
+
+    private static IReadOnlyList<JsonNode> ParseSupplyCsv(string name)
+    {
+        var payload = DlcClientPatches.SupplyShop;
+        var marker = $"local {name} = [[";
+        var start = payload.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = payload.IndexOf("]]", start, StringComparison.Ordinal);
+        var lines = payload[start..end].Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Trim().Length > 0).ToList();
+        var header = lines[1].Trim().Split('\t');
+
+        return lines.Skip(2).Select(line =>
+        {
+            var cells = line.Trim().Split('\t');
+            var row = new JsonObject();
+            for (var i = 0; i < header.Length && i < cells.Length; i++)
+                row[header[i]] = ParseSupplyCell(cells[i]);
+            return (JsonNode)row;
+        }).ToList();
+    }
+
+    private static JsonNode? ParseSupplyCell(string cell)
+    {
+        if (uint.TryParse(cell, out var number))
+            return JsonValue.Create(number);
+        if (!cell.StartsWith('{'))
+            return JsonValue.Create(cell);
+
+        // Lua table cells may nest, as {{1,50},{2,60}}.
+        try
+        {
+            return JsonNode.Parse(cell.Replace('{', '[').Replace('}', ']'));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return JsonValue.Create(cell);
+        }
+    }
 
     public static JsonNode? GoodsRow(uint goodsId) =>
-        Optional("shop/goods.json").Concat(Optional("dlc/dlc_goods.json")).FirstOrDefault(r => CapturedGameplay.UInt(r, "GoodsId") == goodsId);
+        Optional("shop/goods.json").Concat(Optional("dlc/dlc_goods.json")).Concat(SupplyGoods.Value).FirstOrDefault(r => CapturedGameplay.UInt(r, "GoodsId") == goodsId);
 
     public static IReadOnlyList<JsonNode> DlcShopRows() => Optional("dlc/dlc_shop.json");
 
     public static IReadOnlyList<JsonNode> GoodsRows(uint shopId) =>
-        Optional("shop/goods.json").Concat(Optional("dlc/dlc_goods.json"))
+        Optional("shop/goods.json").Concat(Optional("dlc/dlc_goods.json")).Concat(SupplyGoods.Value)
             .Where(r => CapturedGameplay.UInt(r, "ShopId") == shopId).ToList();
 
     public static uint? PosIndex(JsonNode row) =>

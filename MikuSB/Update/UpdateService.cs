@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using MikuSB.Internationalization;
 using MikuSB.Net;
 using MikuSB.Util;
+using MikuSB.Util.Security;
 
 namespace MikuSB.MikuSB.Update;
 
@@ -55,6 +56,9 @@ public static class UpdateService
         Environment.GetEnvironmentVariable("MIKUSB_RESOURCE_ARCHIVE")
         ?? "https://github.com/dubstream3/MikuSB-Resource/archive/refs/heads/main.zip";
 
+    private static readonly string? ResourceArchiveSha256 =
+        Environment.GetEnvironmentVariable("MIKUSB_RESOURCE_SHA256") is { Length: > 0 } pinned ? pinned.Trim() : null;
+
     private static readonly string[] RequiredResourceFiles =
     [
         "item/templates/card.json",
@@ -103,10 +107,12 @@ public static class UpdateService
             if (published == null)
                 return Remember(new UpdateCheck(BuildVersion.Current, null, false, null, 0, null, "version_unavailable"));
 
-            // The published version.txt is the whole answer: same text as the running build means there is
-            // nothing to do, anything else (newer, older, a hand-edited tag) means the two builds differ.
+            // Only a strictly newer version counts: version.txt may come through a mirror, and accepting
+            // an older one would let it roll the server back to a build with known problems.
             var latest = BuildVersion.Normalize(published);
-            var available = !string.Equals(latest, BuildVersion.Current, StringComparison.OrdinalIgnoreCase);
+            var available = Version.TryParse(latest, out var latestVersion)
+                            && Version.TryParse(BuildVersion.Current, out var currentVersion)
+                            && latestVersion > currentVersion;
             var assetName = available ? AssetNameForCurrentPlatform() : null;
 
             return Remember(new UpdateCheck(
@@ -171,6 +177,11 @@ public static class UpdateService
                 return false;
             }
 
+            // The panel is the only place that can show a long download, so the host publishes what it is
+            // downloading; SdkServer reads it from Common state instead of a bridge delegate (delegates are
+            // wired after the update check, and the panel is already serving while this runs).
+            ServerRuntime.Enter(ServerRuntime.PhaseUpdate, check.Latest);
+
             using var client = GitHubApi.CreateClient("MikuSB-Updater");
 
             var tempRoot = CreateStagingDirectory();
@@ -180,24 +191,29 @@ public static class UpdateService
             Logger.Info(I18NManager.Translate("Server.ServerInfo.DownloadingUpdate", check.Latest));
 
             var packageUrl = PackageUrl(check.Latest, assetName);
-            await DownloadAsync(client, packageUrl, packagePath, PackageDownloadTimeoutSeconds);
+            await DownloadAsync(client, packageUrl, packagePath, PackageDownloadTimeoutSeconds, allowMirrors: false);
 
-            var resourcePackagePath = Path.Combine(tempRoot, "MikuSB-Resource-main.zip");
-            Logger.Info(I18NManager.Translate("Server.ServerInfo.DownloadingResourcePackage"));
-            await DownloadAsync(client, ResourceArchiveUrl, resourcePackagePath, ResourceDownloadTimeoutSeconds);
+            // Without a pinned hash the resource archive cannot be trusted, so the update leaves resources alone.
+            var resourcePackagePath = "";
+            if (ResourceArchiveSha256 != null)
+            {
+                resourcePackagePath = Path.Combine(tempRoot, "MikuSB-Resource-main.zip");
+                Logger.Info(I18NManager.Translate("Server.ServerInfo.DownloadingResourcePackage"));
+                await DownloadAsync(client, ResourceArchiveUrl, resourcePackagePath, ResourceDownloadTimeoutSeconds);
+                VerifyResourceArchive(resourcePackagePath);
+            }
 
-            // The checksum is published next to the package; when it is missing the update still
-            // proceeds, because a broken sha256 upload should not block a security fix.
-            try
-            {
-                var checksumPath = Path.Combine(tempRoot, assetName + ".sha256");
-                await DownloadAsync(client, packageUrl + ".sha256", checksumPath, ChecksumDownloadTimeoutSeconds);
-                VerifySha256(packagePath, checksumPath);
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or GitHubDownloadException)
-            {
-                Logger.Warn($"Checksum for {assetName} could not be verified: {ex.Message}");
-            }
+            // Executable code: the package and its checksum come directly from GitHub, and an update
+            // whose checksum is missing or wrong is abandoned before anything is installed.
+            var checksumPath = Path.Combine(tempRoot, assetName + ".sha256");
+            await DownloadAsync(client, packageUrl + ".sha256", checksumPath, ChecksumDownloadTimeoutSeconds, allowMirrors: false);
+            VerifySha256(packagePath, checksumPath);
+
+            // The signature is what proves the package is ours: GitHub only proves where it came from.
+            var signaturePath = Path.Combine(tempRoot, assetName + ".sig");
+            await DownloadAsync(client, packageUrl + ".sig", signaturePath, ChecksumDownloadTimeoutSeconds, allowMirrors: false);
+            if (!ReleaseSignature.Verify(File.ReadAllBytes(packagePath), File.ReadAllText(signaturePath)))
+                throw new InvalidDataException("Update package signature is not valid.");
 
             var stagedUpdaterPath = StageUpdaterExecutable();
             var process = Process.Start(new ProcessStartInfo
@@ -219,6 +235,7 @@ public static class UpdateService
             if (process == null)
             {
                 Logger.Warn(I18NManager.Translate("Server.ServerInfo.FailedToStartUpdater"));
+                ServerRuntime.BackToRunning();
                 return false;
             }
 
@@ -226,10 +243,14 @@ public static class UpdateService
             // The startup path returns from Main and the process ends there; the panel path has no such exit,
             // so the host registers ShutdownRequest and we ask it to stop now that the updater holds the files.
             ShutdownRequest?.Invoke(0);
+            // Only reachable when nobody is listening for the shutdown request (the console-only hosts): then
+            // this process keeps running, so it must stop claiming it is still downloading.
+            ServerRuntime.BackToRunning();
             return true;
         }
         catch (Exception ex)
         {
+            ServerRuntime.BackToRunning();
             Logger.Warn(I18NManager.Translate("Server.ServerInfo.AutoUpdateCheckFailed"), ex);
             return false;
         }
@@ -241,8 +262,17 @@ public static class UpdateService
         {
             if (Environment.GetEnvironmentVariable("MIKUSB_OFFLINE") == "1")
                 throw new FileNotFoundException("Local resources missing; configure Path.ResourcePath.");
-                        Logger.Warn(I18NManager.Translate("Server.ServerInfo.RequiredResourcesMissing"));
-            await DownloadAndInstallResourcesAsync();
+            Logger.Warn(I18NManager.Translate("Server.ServerInfo.RequiredResourcesMissing"));
+            try
+            {
+                await DownloadAndInstallResourcesAsync();
+            }
+            finally
+            {
+                // Registered as well when the download throws: a failed install leaves the host in the error
+                // path, and the panel must not keep advertising a download that is no longer running.
+                ServerRuntime.BackToRunning();
+            }
         }
     }
 
@@ -321,6 +351,10 @@ public static class UpdateService
                 return ParseVersionText(text);
         }
 
+        // One warning for the whole lookup instead of one debug line per dropped source: the per-source
+        // lines are inside GitHubApi.ReadTextAsync and stay silent when a mirror answers.
+        Logger.Warn($"version.txt could not be read from any source ({VersionFileUrls.Length} url(s) tried); " +
+                    "the update check reports version_unavailable.");
         return null;
     }
 
@@ -403,8 +437,24 @@ public static class UpdateService
         }
     }
 
+    private static void VerifyResourceArchive(string path)
+    {
+        var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+        if (!string.Equals(actual, ResourceArchiveSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Downloaded resource archive does not match MIKUSB_RESOURCE_SHA256.");
+    }
+
     private static async Task DownloadAndInstallResourcesAsync()
     {
+        // Checked first, because the existing tree is removed below.
+        if (ResourceArchiveSha256 == null)
+            throw new InvalidOperationException(
+                "Install resources by hand, or set MIKUSB_RESOURCE_SHA256 to the expected archive hash to download them.");
+
+        // Same reason as the release download above: this runs inside startup, while the panel is already
+        // serving, and it is the slowest step of a first run.
+        ServerRuntime.Enter(ServerRuntime.PhaseResources, ResourceArchiveUrl);
+
         using var client = GitHubApi.CreateClient("MikuSB-Updater");
         var tempRoot = Path.Combine(Path.GetTempPath(), "MikuSB", "resources", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -423,6 +473,7 @@ public static class UpdateService
 
         var resourcePackagePath = Path.Combine(tempRoot, "MikuSB-Resource-main.zip");
         await DownloadAsync(client, ResourceArchiveUrl, resourcePackagePath, ResourceDownloadTimeoutSeconds);
+        VerifyResourceArchive(resourcePackagePath);
 
         var installedFiles = InstallResourcesFromArchive(resourcePackagePath, resourceTargetDirectory);
         Logger.Info(I18NManager.Translate("Server.ServerInfo.ResourcesInstalled",
@@ -474,7 +525,7 @@ public static class UpdateService
     ///     One download entry point for everything GitHub: mirrors, header budget, stall watchdog and
     ///     progress reporting all live in <see cref="GitHubApi" />, this only supplies the wording.
     /// </summary>
-    private static Task DownloadAsync(HttpClient client, string url, string destinationPath, int timeoutSeconds)
+    private static Task DownloadAsync(HttpClient client, string url, string destinationPath, int timeoutSeconds, bool allowMirrors = true)
     {
         var fileName = Path.GetFileName(destinationPath);
         var mirrorCount = GitHubApi.Mirrors.Count;
@@ -486,6 +537,7 @@ public static class UpdateService
         {
             TimeoutSeconds = timeoutSeconds,
             DirectAttempts = 1,
+            AllowMirrors = allowMirrors,
             OnAttempt = (host, isMirror, index, total) =>
             {
                 if (isMirror)
